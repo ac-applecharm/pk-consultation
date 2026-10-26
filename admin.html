@@ -5,50 +5,33 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
 <title>PK team results</title>
+<link rel="stylesheet" href="app.css">
 <style>
-:root { --bg:#fafaf5; --card:#fff; --ink:#171717; --muted:#5f6259; --line:#e4e2d6; --soft:#f1f0e6; --accent:#ffd202; --accent-soft:#fff6c7; --dark:#2b2b2b; --dark-ink:#fff; --warn-bg:#ffe9d1; --warn-ink:#9a4b00; --ok-bg:#e3f4e8; --ok-ink:#1d6a39; --focus:#1a5fd0; --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif; }
-@media (prefers-color-scheme: dark) { :root { --bg:#17180f; --card:#212217; --ink:#f2f1e8; --muted:#b0b0a0; --line:#3a3b2b; --soft:#2a2b1e; --accent-soft:#3d3600; --dark:#f2f1e8; --dark-ink:#17180f; --warn-bg:#3f2a10; --warn-ink:#ffc58a; --ok-bg:#173a24; --ok-ink:#9fdcb4; --focus:#8ab4f8; } }
-* { box-sizing: border-box; }
-body { margin:0; background:var(--bg); color:var(--ink); font:17px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif; }
-.shell { max-width:980px; margin:0 auto; padding:14px 16px 80px; }
-.nav { display:flex; align-items:center; justify-content:space-between; gap:12px; background:var(--card); border:1px solid var(--line); border-radius:999px; padding:8px 10px 8px 14px; }
-.brand { display:flex; align-items:center; gap:10px; font-weight:650; }
-.brand i { display:grid; place-items:center; width:28px; height:28px; border-radius:8px; background:var(--accent); color:#171717; font:800 15px system-ui; font-style:normal; }
-h1, h2 { font-family:var(--serif); font-weight:500; letter-spacing:-.01em; }
-h1 { font-size:30px; margin:22px 0 8px; } h2 { font-size:24px; margin:0 0 12px; }
-.card { background:var(--card); border:1px solid var(--line); border-radius:20px; padding:22px; margin-top:16px; }
-label { display:block; font-weight:650; margin:12px 0 4px; }
-input[type=text], input[type=email], input[type=password], select { width:100%; font:inherit; padding:10px 14px; border-radius:16px; border:1px solid var(--line); background:var(--card); color:var(--ink); min-height:46px; }
-.row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:12px; }
-button { font:inherit; font-weight:650; padding:10px 22px; border-radius:999px; border:1px solid var(--dark); background:var(--dark); color:var(--dark-ink); min-height:44px; cursor:pointer; }
-button.ghost { background:transparent; color:var(--ink); border-color:var(--line); }
-button.danger { background:var(--warn-bg); color:var(--warn-ink); border-color:var(--warn-ink); }
-button:disabled { opacity:.45; cursor:not-allowed; }
-button:focus-visible, input:focus-visible, select:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
-.tabs { display:flex; gap:6px; flex-wrap:wrap; margin-top:18px; }
-.tabs button { background:transparent; color:var(--muted); border-color:transparent; }
-.tabs button[aria-selected="true"] { background:var(--accent-soft); border-color:var(--accent); color:var(--ink); }
-table { border-collapse:collapse; width:100%; font-size:15px; margin-top:12px; }
-th, td { border:1px solid var(--line); padding:7px 10px; text-align:left; vertical-align:top; }
-th { background:var(--soft); font-family:var(--serif); font-weight:500; }
-.hidden { color:var(--warn-ink); background:var(--warn-bg); border-radius:999px; padding:1px 10px; font-size:13px; font-weight:700; }
-.note { font-size:14px; color:var(--muted); }
-.msg { margin-top:12px; padding:10px 14px; border-radius:14px; background:var(--soft); }
-.msg.err { background:var(--warn-bg); color:var(--warn-ink); }
-.msg.ok { background:var(--ok-bg); color:var(--ok-ink); }
-[hidden] { display:none !important; }
+.shell { max-width: 980px; }
+h2 { font-size: 24px; }
+label.f { display: block; font-weight: 600; margin: 12px 0 4px; }
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
+.tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 18px; }
+.tabs button { font: inherit; font-weight: 600; padding: 10px 20px; border-radius: 999px; border: 1px solid transparent; background: transparent; color: var(--muted); min-height: 44px; cursor: pointer; }
+.tabs button[aria-selected="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--ink); }
+table.t { border-collapse: collapse; width: 100%; font-size: 15px; margin-top: 12px; }
+table.t th, table.t td { border: 1px solid var(--line); padding: 7px 10px; text-align: left; vertical-align: top; }
+table.t th { background: var(--soft); font-weight: 600; }
+.hid { color: var(--warn-ink); background: var(--warn-bg); border-radius: 999px; padding: 1px 10px; font-size: 13px; font-weight: 700; }
+.hint { font-size: 14px; color: var(--muted); margin: 0 0 12px; }
+button.danger { background: var(--warn-bg); color: var(--warn-ink); border-color: var(--warn-ink); }
 </style>
 </head>
 <body>
 <div class="shell">
-  <header class="nav"><div class="brand"><i>P</i>PK team results</div><button class="ghost" id="signout" hidden>Sign out</button></header>
+  <header class="nav"><div class="brand"><i>P</i><span>PK team results</span></div><button class="btn ghost" id="signout" style="min-height:36px;padding:4px 16px" hidden>Sign out</button></header>
 
-  <section id="login" class="card">
+  <section id="login" class="card" style="margin-top:22px;max-width:520px">
     <h2>Sign in</h2>
-    <p class="note">For the PK team only. Accounts are created by the project owner.</p>
-    <label for="em">Email</label><input id="em" type="email" autocomplete="username">
-    <label for="pw">Password</label><input id="pw" type="password" autocomplete="current-password">
-    <div class="row"><button id="go">Sign in</button></div>
+    <p class="hint">For the PK team only. Accounts are created by the project owner.</p>
+    <label class="f" for="em">Email</label><input id="em" type="text" autocomplete="username">
+    <label class="f" for="pw">Password</label><input id="pw" type="password" autocomplete="current-password">
+    <div class="row"><button class="btn" id="go">Sign in</button></div>
     <div id="loginmsg"></div>
   </section>
 
@@ -57,44 +40,60 @@ th { background:var(--soft); font-family:var(--serif); font-weight:500; }
       <button role="tab" data-tab="overview" aria-selected="true">Overview</button>
       <button role="tab" data-tab="items" aria-selected="false">Question counts</button>
       <button role="tab" data-tab="export" aria-selected="false">Export</button>
+      <button role="tab" data-tab="content" aria-selected="false">Content</button>
       <button role="tab" data-tab="account" aria-selected="false">Account</button>
     </div>
 
-    <div id="t-overview" class="card">
+    <div id="t-overview" class="card" style="margin-top:16px">
       <h2>Overview</h2>
-      <p class="note">Respondents so far, by form, attendance and combined group. Any group with fewer than 5 people is hidden and shown as &lt;5.</p>
-      <div class="row"><button id="ref">Refresh</button><label style="display:inline-flex;gap:8px;align-items:center;margin:0;font-weight:400"><input type="checkbox" id="inctest1"> Include rehearsal (TEST code) rows</label></div>
+      <p class="hint">Respondents so far, by form, attendance and combined group. Any group with fewer than 5 people is hidden and shown as &lt;5.</p>
+      <div class="row"><button class="btn" id="ref">Refresh</button><label style="display:inline-flex;gap:8px;align-items:center;margin:0;font-weight:400"><input type="checkbox" id="inctest1"> Include rehearsal (TEST code) rows</label></div>
       <div id="ov"></div>
     </div>
 
-    <div id="t-items" class="card" hidden>
+    <div id="t-items" class="card" style="margin-top:16px" hidden>
       <h2>Question counts</h2>
-      <p class="note">Type a question number, for example 1.1, and choose the form. Counts under 5 are hidden. Open-text answers are not shown here. Use the export for those.</p>
-      <label for="item">Question number</label><input id="item" type="text" placeholder="1.1">
-      <label for="form">Form</label>
+      <p class="hint">Type a question number, for example 1.1, and choose the form. Counts under 5 are hidden. Open-text answers are not shown here. Use the export for those.</p>
+      <label class="f" for="item">Question number</label><input id="item" type="text" placeholder="1.1">
+      <label class="f" for="form">Form</label>
       <select id="form"><option value="full">Full English form</option><option value="bhw">Filipino short form (BHW)</option></select>
-      <div class="row"><button id="runitem">Show counts</button><label style="display:inline-flex;gap:8px;align-items:center;margin:0;font-weight:400"><input type="checkbox" id="inctest2"> Include rehearsal rows</label></div>
+      <div class="row"><button class="btn" id="runitem">Show counts</button><label style="display:inline-flex;gap:8px;align-items:center;margin:0;font-weight:400"><input type="checkbox" id="inctest2"> Include rehearsal rows</label></div>
       <div id="itemout"></div>
     </div>
 
-    <div id="t-export" class="card" hidden>
+    <div id="t-export" class="card" style="margin-top:16px" hidden>
       <h2>Export</h2>
-      <p class="note"><b>Confidential.</b> The export has every answer, including organization names and open-text answers, and nothing is hidden. Keep it on a protected device, and share only combined results.</p>
+      <p class="hint"><b>Confidential.</b> The export has every answer, including organization names and open-text answers, and nothing is hidden. Keep it on a protected device, and share only combined results.</p>
       <div class="row"><label style="display:inline-flex;gap:8px;align-items:center;margin:0;font-weight:400"><input type="checkbox" id="inctest3"> Include rehearsal rows</label></div>
-      <div class="row"><button id="dl">Download CSV (opens in Excel)</button></div>
+      <div class="row"><button class="btn" id="dl">Download CSV (opens in Excel)</button></div>
       <hr style="border:0;border-top:1px solid var(--line);margin:22px 0">
       <h2 style="font-size:20px">Clear rehearsal rows</h2>
-      <p class="note">Deletes only the rows made with the TEST code. Do this before launch.</p>
-      <div class="row"><button class="danger" id="deltest">Delete rehearsal rows</button></div>
+      <p class="hint">Deletes only the rows made with the TEST code. Do this before launch.</p>
+      <div class="row"><button class="btn danger" id="deltest">Delete rehearsal rows</button></div>
       <div id="expmsg"></div>
     </div>
 
-    <div id="t-account" class="card" hidden>
+    <div id="t-content" class="card" style="margin-top:16px" hidden>
+      <h2>Content</h2>
+      <p class="hint">Publish the module text. Choose the form, choose the content file you received from the build team, check the summary, and publish. The earlier version is kept, so you can go back.</p>
+      <label class="f" for="cform">Form</label>
+      <select id="cform"><option value="full">Full English form</option><option value="bhw">Filipino short form (BHW)</option></select>
+      <label class="f" for="cfile">Content file (.json)</label>
+      <input id="cfile" type="file" accept=".json,application/json">
+      <div id="cprev"></div>
+      <div class="row"><button class="btn" id="cpub" disabled>Publish this content</button></div>
+      <div id="cmsg"></div>
+      <h2 style="font-size:20px;margin-top:26px">Versions</h2>
+      <div class="row"><button class="btn ghost" id="cref" style="min-height:36px">Refresh list</button></div>
+      <div id="cver"></div>
+    </div>
+
+    <div id="t-account" class="card" style="margin-top:16px" hidden>
       <h2>Account</h2>
-      <p class="note">Signed in as <b id="who"></b>. Change your password if someone gave you a starting password.</p>
-      <label for="np1">New password (at least 12 characters)</label><input id="np1" type="password" autocomplete="new-password">
-      <label for="np2">Type it again</label><input id="np2" type="password" autocomplete="new-password">
-      <div class="row"><button id="chpw">Change password</button></div>
+      <p class="hint">Signed in as <b id="who"></b>. Change your password if someone gave you a starting password.</p>
+      <label class="f" for="np1">New password (at least 12 characters)</label><input id="np1" type="password" autocomplete="new-password">
+      <label class="f" for="np2">Type it again</label><input id="np2" type="password" autocomplete="new-password">
+      <div class="row"><button class="btn" id="chpw">Change password</button></div>
       <div id="pwmsg"></div>
     </div>
   </section>
@@ -114,7 +113,7 @@ async function api(path, opts) {
   const headers = Object.assign({ apikey: KEY_, "Content-Type": "application/json" }, opts.headers || {});
   if (token) headers.Authorization = "Bearer " + token;
   const res = await fetch(URL_ + path, Object.assign({}, opts, { headers }));
-  if (res.status === 401 || res.status === 403) { if (path.indexOf("/auth/v1/token") < 0) { signOut("Please sign in again."); } }
+  if ((res.status === 401 || res.status === 403) && path.indexOf("/auth/v1/token") < 0 && token) { signOut("Please sign in again."); }
   return res;
 }
 function show(signedIn) {
@@ -142,14 +141,15 @@ $("pw").addEventListener("keydown", (e) => { if (e.key === "Enter") $("go").clic
 
 document.querySelectorAll(".tabs button").forEach((b) => b.onclick = () => {
   document.querySelectorAll(".tabs button").forEach((x) => x.setAttribute("aria-selected", x === b ? "true" : "false"));
-  ["overview", "items", "export", "account"].forEach((t) => $("t-" + t).hidden = (t !== b.dataset.tab));
+  ["overview", "items", "export", "content", "account"].forEach((t) => $("t-" + t).hidden = (t !== b.dataset.tab));
+  if (b.dataset.tab === "content") versions();
 });
 
 function table(headers, rows) {
-  const t = document.createElement("table"), thead = document.createElement("thead"), tr = document.createElement("tr");
+  const t = document.createElement("table"); t.className = "t"; const thead = document.createElement("thead"), tr = document.createElement("tr");
   headers.forEach((h) => { const th = document.createElement("th"); th.textContent = h; tr.appendChild(th); }); thead.appendChild(tr); t.appendChild(thead);
   const tb = document.createElement("tbody");
-  rows.forEach((r) => { const row = document.createElement("tr"); r.forEach((c) => { const td = document.createElement("td"); if (c && c.hidden) { const s = document.createElement("span"); s.className = "hidden"; s.textContent = "<5"; td.appendChild(s); } else td.textContent = c == null ? "" : String(c); row.appendChild(td); }); tb.appendChild(row); });
+  rows.forEach((r) => { const row = document.createElement("tr"); r.forEach((c) => { const td = document.createElement("td"); if (c && c.hidden) { const s = document.createElement("span"); s.className = "hid"; s.textContent = "<5"; td.appendChild(s); } else if (c && c.node) td.appendChild(c.node); else td.textContent = c == null ? "" : String(c); row.appendChild(td); }); tb.appendChild(row); });
   t.appendChild(tb); return t;
 }
 async function rpc(name, body) {
@@ -163,7 +163,7 @@ async function refresh() {
     const j = await rpc("admin_summary", { p_include_test: $("inctest1").checked });
     if (!j.rows.length) { msg(out, "No responses yet.", ""); return; }
     out.appendChild(table(["Form", "Attendance", "Group", "Started", "Completed"], j.rows.map((r) => [r.form === "bhw" ? "Filipino short form" : "Full English form", r.attendance.replace("_", " "), r.group, r.hidden ? { hidden: 1 } : r.started, r.completed == null ? { hidden: 1 } : r.completed])));
-    const p = document.createElement("p"); p.className = "note"; p.textContent = "Updated " + new Date(j.generated_at).toLocaleString(); out.appendChild(p);
+    const p = document.createElement("p"); p.className = "hint"; p.textContent = "Updated " + new Date(j.generated_at).toLocaleString(); out.appendChild(p);
   } catch (e) { msg(out, "Could not load results: " + e.message, "err"); }
 }
 $("ref").onclick = refresh; $("inctest1").onchange = refresh;
@@ -189,8 +189,7 @@ async function fetchAll(path) {
 }
 function csvCell(v) {
   if (v == null) return "";
-  if (Array.isArray(v)) v = v.join("; ");
-  else if (typeof v === "object") v = JSON.stringify(v);
+  if (Array.isArray(v)) v = v.join("; "); else if (typeof v === "object") v = JSON.stringify(v);
   v = String(v); return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
 }
 $("dl").onclick = async () => {
@@ -216,6 +215,74 @@ $("deltest").onclick = async () => {
   try { const n = await rpc("admin_delete_test_rows"); msg($("expmsg"), "Deleted " + n + " rehearsal rows.", "ok"); refresh(); }
   catch (e) { msg($("expmsg"), "Could not delete: " + e.message, "err"); }
 };
+
+/* ---------- content ---------- */
+let pending = null;
+function validate(c) {
+  const errs = [];
+  if (!c || typeof c !== "object") return ["The file is not a content file."];
+  if (!Array.isArray(c.stops) || !c.stops.length) return ["The file has no stops."];
+  const qs = c.questions || {}, opts = (c.options || []).map((o) => o.k);
+  let screens = 0, finals = 0, ids = new Set();
+  const walk = (blocks, sid) => (blocks || []).forEach((b) => {
+    if (b.t === "q" && !qs[b.id]) errs.push("Screen " + sid + " uses a question that is not defined: " + b.id);
+    if (b.t === "optionCard" && opts.indexOf(b.id) < 0) errs.push("Screen " + sid + " uses an option card that is not defined: " + b.id);
+    if (b.t === "details" || b.t === "card") walk(b.blocks, sid);
+  });
+  c.stops.forEach((st) => (st.screens || []).forEach((sc) => {
+    screens++; if (sc.final) finals++;
+    if (ids.has(sc.id)) errs.push("Two screens have the same id: " + sc.id); ids.add(sc.id);
+    walk(sc.blocks, sc.id);
+  }));
+  Object.keys(qs).forEach((k) => { const q = qs[k]; if (q.optionsOf && !qs[q.optionsOf]) errs.push("Question " + k + " points to a missing question " + q.optionsOf); });
+  if (!finals) errs.push("The file has no final (thank-you) screen.");
+  c._summary = { stops: c.stops.length, screens, questions: Object.keys(qs).length };
+  return errs;
+}
+$("cfile").onchange = async () => {
+  const f = $("cfile").files[0], out = $("cprev"); out.innerHTML = ""; pending = null; $("cpub").disabled = true; msg($("cmsg"), "");
+  if (!f) return;
+  try {
+    const c = JSON.parse(await f.text()); const errs = validate(c);
+    if (errs.length) { msg(out, "This file cannot be published: " + errs.join(" "), "err"); return; }
+    pending = c; $("cpub").disabled = false;
+    msg(out, "Version: " + ((c.meta && c.meta.version) || "(none)") + ". " + c._summary.stops + " stops, " + c._summary.screens + " screens, " + c._summary.questions + " questions. The file passed the checks.", "ok");
+  } catch (e) { msg(out, "That file could not be read as content (" + e.message + ").", "err"); }
+};
+$("cpub").onclick = async () => {
+  if (!pending) return; const form = $("cform").value, out = $("cmsg");
+  if (!confirm("Publish this content to the " + (form === "bhw" ? "Filipino short form" : "full English form") + "? Participants will see it right away.")) return;
+  $("cpub").disabled = true; msg(out, "Publishing...", "");
+  try {
+    const body = JSON.parse(JSON.stringify(pending)); delete body._summary;
+    const version = ((body.meta && body.meta.version) || "version") + " @ " + new Date().toISOString();
+    const ins = await api("/rest/v1/content", { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify({ space: "prework", form, lang: form === "bhw" ? "fil" : "en", version, body, published: false }) });
+    if (!ins.ok) throw new Error("Could not save (" + ins.status + ")");
+    const row = (await ins.json())[0];
+    await goLive(row.id, form);
+    msg(out, "Published. Participants now see this version.", "ok"); pending = null; $("cfile").value = ""; $("cprev").innerHTML = ""; versions();
+  } catch (e) { msg(out, "Could not publish: " + e.message, "err"); $("cpub").disabled = false; }
+};
+async function goLive(id, form) {
+  const off = await api("/rest/v1/content?space=eq.prework&form=eq." + form, { method: "PATCH", body: JSON.stringify({ published: false }) });
+  if (!off.ok) throw new Error("Could not unpublish the old version (" + off.status + ")");
+  const on = await api("/rest/v1/content?id=eq." + id, { method: "PATCH", body: JSON.stringify({ published: true }) });
+  if (!on.ok) throw new Error("Could not make the new version live (" + on.status + ")");
+}
+async function versions() {
+  const out = $("cver"); out.innerHTML = "";
+  try {
+    const rows = await fetchAll("/rest/v1/content?select=id,form,version,published,updated_at&order=updated_at.desc");
+    if (!rows.length) { msg(out, "Nothing published yet.", ""); return; }
+    out.appendChild(table(["Form", "Version", "Updated", "Live", ""], rows.map((r) => {
+      let btn = "";
+      if (!r.published) { const b = document.createElement("button"); b.className = "btn ghost"; b.style.minHeight = "34px"; b.style.padding = "2px 14px"; b.textContent = "Make live"; b.onclick = async () => { if (!confirm("Make this version live?")) return; try { await goLive(r.id, r.form); versions(); } catch (e) { msg(out, e.message, "err"); } }; btn = { node: b }; }
+      return [r.form === "bhw" ? "Filipino short form" : "Full English form", r.version, new Date(r.updated_at).toLocaleString(), r.published ? "Live" : "", btn];
+    })));
+  } catch (e) { msg(out, "Could not load versions: " + e.message, "err"); }
+}
+$("cref").onclick = versions;
+
 $("chpw").onclick = async () => {
   const a = $("np1").value, b = $("np2").value, out = $("pwmsg");
   if (a.length < 12) { msg(out, "Use at least 12 characters.", "err"); return; }
