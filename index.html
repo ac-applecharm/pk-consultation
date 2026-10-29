@@ -11,7 +11,7 @@
 <div class="shell">
   <header class="nav">
     <div class="brand"><i>P</i><span>PK Direction Consultation</span></div>
-    <div class="save" id="saveState" hidden></div>
+    <div class="navr"><button type="button" class="langbtn" id="langBtn" hidden></button><div class="save" id="saveState" hidden></div></div>
   </header>
 
   <section id="gate" class="card" style="margin-top:28px;max-width:640px;margin-left:auto;margin-right:auto">
@@ -25,19 +25,10 @@
     <p class="foot" style="text-align:left;margin-top:22px">Department of Health, Bureau of Local Health Systems Development</p>
   </section>
 
-  <section id="chooser" class="card" hidden style="margin-top:28px;max-width:640px;margin-left:auto;margin-right:auto">
-    <span class="pill"><b></b>Piliin ang porma / Choose your form</span>
-    <h2>Which form is for you? / Aling porma ang para sa inyo?</h2>
-    <div class="choice" id="choiceList"></div>
-  </section>
-
   <div id="module" class="layout" hidden>
-    <aside id="side"><ul class="stops" id="stops" aria-label="Stops"></ul></aside>
-    <section>
-      <div class="pill" id="crumb"><b></b><span></span></div>
-      <div class="bar" aria-hidden="true"><i id="barfill"></i></div>
-      <main id="main" tabindex="-1" aria-live="polite"></main>
-    </section>
+    <nav class="prog" aria-label="Progress"><ol class="segs" id="segs"></ol></nav>
+    <div class="pills"><span class="pill" id="crumb"><b></b><span></span></span><span class="pill plain" id="crumb2"></span></div>
+    <main id="main" tabindex="-1" aria-live="polite"></main>
   </div>
 </div>
 <div id="gloss" role="dialog" aria-live="polite"></div>

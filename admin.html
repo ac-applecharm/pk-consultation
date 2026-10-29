@@ -53,10 +53,15 @@ button.danger { background: var(--warn-bg); color: var(--warn-ink); border-color
 
     <div id="t-items" class="card" style="margin-top:16px" hidden>
       <h2>Question counts</h2>
-      <p class="hint">Type a question number, for example 1.1, and choose the form. Counts under 5 are hidden. Open-text answers are not shown here. Use the export for those.</p>
-      <label class="f" for="item">Question number</label><input id="item" type="text" placeholder="1.1">
+      <p class="hint">Choose the form, then choose a question from the list. The counts appear straight away. Counts under 5 are hidden. Open-text answers are not shown here. Use the export for those.</p>
       <label class="f" for="form">Form</label>
       <select id="form"><option value="full">Full English form</option><option value="bhw">Filipino short form (BHW)</option></select>
+      <label class="f" for="itemsel">Question</label>
+      <select id="itemsel"><option value="">Loading the list of questions...</option></select>
+      <div id="itemfb" hidden>
+        <p class="hint" id="itemfbmsg"></p>
+        <label class="f" for="item">Question number (use this only if the list is empty)</label><input id="item" type="text" placeholder="1.1">
+      </div>
       <div class="row"><button class="btn" id="runitem">Show counts</button><label style="display:inline-flex;gap:8px;align-items:center;margin:0;font-weight:400"><input type="checkbox" id="inctest2"> Include rehearsal rows</label></div>
       <div id="itemout"></div>
     </div>
@@ -143,6 +148,7 @@ document.querySelectorAll(".tabs button").forEach((b) => b.onclick = () => {
   document.querySelectorAll(".tabs button").forEach((x) => x.setAttribute("aria-selected", x === b ? "true" : "false"));
   ["overview", "items", "export", "content", "account"].forEach((t) => $("t-" + t).hidden = (t !== b.dataset.tab));
   if (b.dataset.tab === "content") versions();
+  if (b.dataset.tab === "items") loadQuestions();
 });
 
 function table(headers, rows) {
@@ -167,9 +173,42 @@ async function refresh() {
   } catch (e) { msg(out, "Could not load results: " + e.message, "err"); }
 }
 $("ref").onclick = refresh; $("inctest1").onchange = refresh;
+/* The list of questions comes from the content that is live for the chosen form. Open-text questions are left out. */
+const CLOSED = ["single", "scale", "multi", "rank", "matrix"];
+const plain = (s) => String(s || "").replace(/\*\*/g, "").replace(/\{\{|\}\}/g, "").replace(/\s+/g, " ").trim();
+async function loadQuestions() {
+  const sel = $("itemsel"), form = $("form").value; sel.innerHTML = ""; $("itemout").innerHTML = "";
+  const fallback = (text) => { $("itemfb").hidden = false; $("itemfbmsg").textContent = text; sel.innerHTML = ""; const o = document.createElement("option"); o.value = ""; o.textContent = "(no list available)"; sel.appendChild(o); };
+  try {
+    const rows = await fetchAll("/rest/v1/content?select=body&published=eq.true&space=eq.prework&form=eq." + form);
+    const top = rows[0] && rows[0].body;
+    if (!top) { fallback("Publish the module content first. Until then, type the question number."); return; }
+    const c = top.variants ? (top.variants.en || top.variants[Object.keys(top.variants)[0]]) : top;
+    const qs = c.questions || {}, seen = new Set();
+    const first = document.createElement("option"); first.value = ""; first.textContent = "Choose a question"; sel.appendChild(first);
+    let count = 0;
+    (c.stops || []).forEach((st) => {
+      const grp = document.createElement("optgroup"); grp.label = (st.num != null ? "Stop " + st.num + ": " : "") + plain(st.label);
+      const walk = (blocks) => (blocks || []).forEach((b) => {
+        if (b.t === "q" && qs[b.id] && !seen.has(b.id) && CLOSED.indexOf(qs[b.id].type) >= 0) {
+          seen.add(b.id); const o = document.createElement("option"); o.value = b.id;
+          const t = plain(qs[b.id].label); o.textContent = b.id + "  " + (t.length > 90 ? t.slice(0, 87) + "..." : t); grp.appendChild(o); count++;
+        }
+        if (b.t === "details" || b.t === "card") walk(b.blocks);
+      });
+      (st.screens || []).forEach((sc) => walk(sc.blocks));
+      if (grp.children.length) sel.appendChild(grp);
+    });
+    if (!count) { fallback("The live content has no closed questions yet. Type the question number instead."); return; }
+    $("itemfb").hidden = true;
+  } catch (e) { fallback("Could not load the question list (" + e.message + "). Type the question number instead."); }
+}
+$("form").onchange = loadQuestions;
+$("itemsel").onchange = () => { if ($("itemsel").value) $("runitem").click(); };
+$("inctest2").onchange = () => { if ($("itemsel").value || $("item").value.trim()) $("runitem").click(); };
 $("runitem").onclick = async () => {
-  const out = $("itemout"); out.innerHTML = ""; const item = $("item").value.trim();
-  if (!item) { msg(out, "Type a question number first.", "err"); return; }
+  const out = $("itemout"); out.innerHTML = ""; const item = ($("itemsel").value || $("item").value).trim();
+  if (!item) { msg(out, "Choose a question first.", "err"); return; }
   try {
     const j = await rpc("admin_item_counts", { p_item: item, p_form: $("form").value, p_include_test: $("inctest2").checked });
     if (!j.rows.length) { msg(out, "No answers for question " + item + " yet.", ""); return; }
@@ -219,8 +258,22 @@ $("deltest").onclick = async () => {
 /* ---------- content ---------- */
 let pending = null;
 function validate(c) {
-  const errs = [];
   if (!c || typeof c !== "object") return ["The file is not a content file."];
+  if (!c.variants) return validateOne(c, c);
+  /* a form with more than one language: check each language, and check they ask the same questions */
+  const keys = Object.keys(c.variants), errs = []; let ref = null;
+  if (!keys.length) return ["The file has no languages."];
+  keys.forEach((k) => {
+    const v = c.variants[k], holder = {};
+    validateOne(v, holder).forEach((e) => errs.push("[" + k + "] " + e));
+    const ids = Object.keys(v.questions || {}).sort().join(",");
+    if (ref === null) { ref = ids; c._summary = holder._summary; c._summary.languages = keys.length; }
+    else if (ref !== ids) errs.push("[" + k + "] The languages do not have the same questions.");
+  });
+  return errs;
+}
+function validateOne(c, holder) {
+  const errs = [];
   if (!Array.isArray(c.stops) || !c.stops.length) return ["The file has no stops."];
   const qs = c.questions || {}, opts = (c.options || []).map((o) => o.k);
   let screens = 0, finals = 0, ids = new Set();
@@ -234,9 +287,16 @@ function validate(c) {
     if (ids.has(sc.id)) errs.push("Two screens have the same id: " + sc.id); ids.add(sc.id);
     walk(sc.blocks, sc.id);
   }));
-  Object.keys(qs).forEach((k) => { const q = qs[k]; if (q.optionsOf && !qs[q.optionsOf]) errs.push("Question " + k + " points to a missing question " + q.optionsOf); });
+  Object.keys(qs).forEach((k) => {
+    const q = qs[k]; if (q.optionsOf && !qs[q.optionsOf]) errs.push("Question " + k + " points to a missing question " + q.optionsOf);
+    const have = (q.options || []).map((o) => (typeof o === "string" ? o : o.v));
+    (q.exclusive || []).forEach((v) => { if (have.indexOf(v) < 0) errs.push("Question " + k + ": the exclusive choice \"" + v + "\" is not one of its options."); });
+    if (q.type === "multi" && !(q.exclusive || []).length && have.some((v) => /^(none of|nothing|don't know|i have no idea)/i.test(v))) errs.push("Question " + k + " has a \"none\" or \"don't know\" choice but no exclusive rule.");
+    if (["open", "perGroup", "condText", "text"].indexOf(q.type) >= 0 && q.maxWords !== 1500) errs.push("Question " + k + " does not have the 1,500-word limit.");
+    if (q.routeForm) Object.keys(q.routeForm).forEach((v) => { if (have.indexOf(v) < 0) errs.push("Question " + k + ": the routing choice \"" + v + "\" is not one of its options."); });
+  });
   if (!finals) errs.push("The file has no final (thank-you) screen.");
-  c._summary = { stops: c.stops.length, screens, questions: Object.keys(qs).length };
+  holder._summary = { stops: c.stops.length, screens, questions: Object.keys(qs).length };
   return errs;
 }
 $("cfile").onchange = async () => {
@@ -246,7 +306,7 @@ $("cfile").onchange = async () => {
     const c = JSON.parse(await f.text()); const errs = validate(c);
     if (errs.length) { msg(out, "This file cannot be published: " + errs.join(" "), "err"); return; }
     pending = c; $("cpub").disabled = false;
-    msg(out, "Version: " + ((c.meta && c.meta.version) || "(none)") + ". " + c._summary.stops + " stops, " + c._summary.screens + " screens, " + c._summary.questions + " questions. The file passed the checks.", "ok");
+    msg(out, "Version: " + ((c.meta && c.meta.version) || "(none)") + ". " + c._summary.stops + " stops, " + c._summary.screens + " screens, " + c._summary.questions + " questions" + (c._summary.languages ? " in " + c._summary.languages + " languages" : "") + ". The file passed the checks.", "ok");
   } catch (e) { msg(out, "That file could not be read as content (" + e.message + ").", "err"); }
 };
 $("cpub").onclick = async () => {
