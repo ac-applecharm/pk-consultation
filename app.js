@@ -18,7 +18,7 @@
     tableShow: "Show the numbers as a table",
     submitFail: "Your answers could not be sent yet. They are saved on this device. Please check your connection and press Submit again."
   };
-  var S = { code: null, hash: null, forms: [], form: null, content: null, variants: null, lang: null, session: null, answers: {}, order: {}, pos: null, furthest: 0, completed: false, queue: [] };
+  var S = { code: null, hash: null, forms: [], form: null, content: null, variants: null, lang: null, session: null, answers: {}, order: {}, pos: null, furthest: 0, completed: false, queue: [], openD: {} };
   var UI = UI0;
 
   // ---------- helpers ----------
@@ -450,7 +450,11 @@
         var cur = S.answers[b.id] === true;
         var inp = el("input", { type: "checkbox", checked: cur, onchange: function () { setAns(b.id, inp.checked); redraw(); } });
         return el("label", { class: "opt" + (cur ? " sel" : "") }, inp, el("span", {}, rich(b.text)));
-      case "details": return el("details", {}, el("summary", { text: b.summary }), b.blocks.map(block));
+      case "details":
+        // a fold-out. With b.key it remembers whether it is open, so it stays open when the page is drawn again after an answer.
+        // b.lang marks the language of what is inside (the Filipino toggle on the first pages).
+        return el("details", { class: b.lang ? "fil-box" : null, open: !!(b.key && S.openD[b.key]), ontoggle: function (e) { if (b.key) S.openD[b.key] = e.target.open; } },
+          el("summary", { text: b.summary }), b.lang ? el("div", { class: "fil-in", lang: b.lang }, b.blocks.map(block)) : b.blocks.map(block));
       case "optionCard": return optCard(b.id);
       case "compare": return compare();
       case "targetCard": return targetCard();
@@ -470,7 +474,7 @@
     var wrap = el("figure", { class: "dbl" }, b.title ? el("figcaption", { class: "dbl-t" }, rich(b.title)) : null,
       el("div", { class: "dbl-leg", "aria-hidden": "true" }, el("span", {}, el("i", { class: "dot a" }), aN), el("span", {}, el("i", { class: "dot b" }), bN)));
     var ticks = [0, 0.25, 0.5, 0.75, 1].map(function (t) { return Math.round(t * max); });
-    var axis = el("div", { class: "dbl-axis", "aria-hidden": "true" }, el("span", {}), el("div", { class: "dbl-plot" }, ticks.map(function (t) { return el("em", { style: "left:" + pos(t) + "%", text: t + (b.unit || "") }); })), el("span", {}));
+    var axis = el("div", { class: "dbl-axis", "aria-hidden": "true" }, el("span", {}), el("div", { class: "dbl-plot" }, ticks.map(function (t) { return el("em", { style: "left:" + pos(t) + "%", text: t + (b.unit || "") }); })), el("span", { class: "dbl-dh", text: W.dhead || "" }));
     wrap.appendChild(axis);
     b.rows.forEach(function (r) {
       var d = r.d != null ? r.d : r.b - r.a, none = r.lo <= 0 && r.hi >= 0;
@@ -484,7 +488,8 @@
         el("span", { class: "v " + (aLeft ? "r" : "l"), style: "left:" + pos(r.b) + "%", text: f1(r.b) }));
       wrap.appendChild(el("div", { class: "dbl-row", role: "img", "aria-label": aria },
         el("div", { class: "dbl-l" }, rich(r.label), r.note ? el("small", { text: r.note }) : null), plot,
-        el("div", { class: "dbl-d" + (none ? " none" : "") }, el("b", { text: sgn(d) }), el("small", { text: none ? (W.none || "no clear difference") : "(" + sgn(r.lo) + " " + (W.to || "to") + " " + sgn(r.hi) + ")" }))));
+        el("div", { class: "dbl-d" + (none ? " none" : "") }, el("b", { text: sgn(d) + " " + (W.pp || "points") }),
+          el("small", { text: none ? (W.none || "no clear difference") + " (" + (W.ci || "range") + " " + sgn(r.lo) + " " + (W.to || "to") + " " + sgn(r.hi) + ")" : (W.likely || "likely range") + " " + sgn(r.lo) + " " + (W.to || "to") + " " + sgn(r.hi) }))));
     });
     if (b.note) wrap.appendChild(el("p", { class: "help", style: "margin-top:12px" }, rich(b.note)));
     return wrap;
@@ -522,7 +527,7 @@
   function exitModule() {
     if (S.queue.length) { flush(); msg($("exitMsg"), T("exitSaving"), ""); return; }
     closeGloss(false);
-    S.code = null; S.hash = null; S.forms = []; S.form = null; S.cameFrom = null; S.carried = []; S.content = null; S.variants = null; S.lang = null; S.session = null;
+    S.openD = {}; S.code = null; S.hash = null; S.forms = []; S.form = null; S.cameFrom = null; S.carried = []; S.content = null; S.variants = null; S.lang = null; S.session = null;
     S.answers = {}; S.order = {}; S.pos = null; S.furthest = 0; S.completed = false; S.queue = [];
     $("main").innerHTML = ""; $("segs").innerHTML = ""; $("langBtn").hidden = true; document.documentElement.lang = "en";
     $("code").value = ""; msg($("gateMsg"), "", ""); status("");
