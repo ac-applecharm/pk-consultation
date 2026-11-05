@@ -175,6 +175,7 @@
         return true;
       case "multi":
         if (!Array.isArray(v) || !v.length) return false;
+        if (q.min && v.length < q.min) return false;
         if (q.other) for (var i = 0; i < q.other.length; i++) if (v.indexOf(q.other[i]) >= 0 && !(S.answers[id + "_text"] || "").trim()) return false;
         return true;
       case "rank": return Array.isArray(v) && v.length === (q.pick || optList(q).length);
