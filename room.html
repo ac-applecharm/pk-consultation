@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>PK Direction Consultation: Room</title>
+<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="room.css">
+</head>
+<body>
+<div class="shell" id="shell">
+  <header class="nav">
+    <div class="brand"><i>P</i><span>PK Direction Consultation</span></div>
+    <div class="navr">
+      <span class="rchip" id="timer" hidden></span>
+      <span class="rchip" id="roleChip" hidden></span>
+      <div class="save" id="saveState" hidden></div>
+      <button type="button" class="langbtn" id="menuBtn" hidden>Menu</button>
+    </div>
+  </header>
+
+  <section id="gate" class="card gatecard">
+    <span class="pill"><b></b>In-room module</span>
+    <h2>The Future Direction of PuroKalusugan</h2>
+    <p>Please enter the access code you were given for today.</p>
+    <label class="t" for="code" style="display:block;font-weight:600;margin-bottom:6px">Access code</label>
+    <input id="code" type="text" placeholder="PK-XXXX-XXXX" autocomplete="off" autocapitalize="characters" spellcheck="false">
+    <div class="nav2" style="justify-content:flex-start;margin-top:14px"><button class="btn" id="codeGo" type="button">Continue</button></div>
+    <div id="gateMsg" aria-live="polite"></div>
+    <div id="joinForm"></div>
+    <p class="foot" style="text-align:left;margin-top:22px">Department of Health, Bureau of Local Health Systems Development</p>
+  </section>
+
+  <div id="app" hidden>
+    <nav class="rtabs" id="tabs" role="tablist" hidden></nav>
+    <main id="view" tabindex="-1"></main>
+  </div>
+</div>
+<div id="toast" role="status" aria-live="polite" hidden></div>
+<script src="pptx.js"></script>
+<script src="room.js"></script>
+</body>
+</html>
