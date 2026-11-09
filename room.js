@@ -181,6 +181,119 @@
     return box;
   }
 
+  // ---------- speaker notes: one labeled section for each topic (staff only) ----------
+  // The deck's notes are one paragraph with four labels. They are split here, when the page draws them, so the
+  // stored deck does not change. Notes without these labels (a colleague's own slide) are shown whole as "NOTES".
+  var NOTE_LABELS = [
+    { key: "who", re: /(?:^|\s)WHO(?: IMPLEMENTS)?\s*:/i },
+    { key: "points", re: /(?:^|\s)DISCUSSION POINTS\s*\/\s*CRITICAL ACTIONS\s*:/i },
+    { key: "materials", re: /(?:^|\s)MATERIALS(?: NEEDED)?\s*:/i },
+    { key: "script", re: /(?:^|\s)SCRIPT(?: FOR SPEAKER)?\s*(?:\(([^)]*)\))?\s*:/i }
+  ];
+  var NOTE_SECTIONS = [["materials", "MATERIALS NEEDED"], ["who", "WHO IMPLEMENTS"], ["points", "DISCUSSION POINTS / CRITICAL ACTIONS"], ["script", "SCRIPT FOR SPEAKER"]];
+  var FOLD_KEY = "pk_room_notes_closed";
+  function parseNotes(paras) {
+    var text = (paras || []).join("\n").trim(), hits = [];
+    NOTE_LABELS.forEach(function (L) {
+      var m = L.re.exec(text);
+      if (m) hits.push({ key: L.key, start: m.index, end: m.index + m[0].length, hint: m[1] || "" });
+    });
+    hits.sort(function (a, b) { return a.start - b.start; });
+    var out = { intro: hits.length ? text.slice(0, hits[0].start).trim() : text, sections: {}, hint: "" };
+    hits.forEach(function (h, i) {
+      out.sections[h.key] = text.slice(h.end, i + 1 < hits.length ? hits[i + 1].start : text.length).trim();
+      if (h.key === "script") out.hint = h.hint;
+    });
+    return out;
+  }
+  function sentences(t) {
+    return String(t).replace(/([.!?]["”’)]?)\s+(?=[A-Z\[“"‘])/g, "$1\u0001").split("\u0001").map(function (s) { return s.trim(); }).filter(Boolean);
+  }
+  function groupSentences(t, maxSent, maxChars) {
+    var out = [], cur = [], len = 0;
+    sentences(t).forEach(function (s) {
+      if (cur.length && (cur.length >= maxSent || len + s.length > maxChars)) { out.push(cur.join(" ")); cur = []; len = 0; }
+      cur.push(s); len += s.length;
+    });
+    if (cur.length) out.push(cur.join(" "));
+    return out;
+  }
+  function numberedPoints(t) {
+    var re = /(?:^|\s)(\d{1,2})\)\s+/g, marks = [], m;
+    while ((m = re.exec(t))) marks.push({ n: m[1], start: m.index, end: m.index + m[0].length });
+    if (!marks.length) return null;
+    return {
+      lead: t.slice(0, marks[0].start).trim(),
+      items: marks.map(function (k, i) { return { n: k.n, text: t.slice(k.end, i + 1 < marks.length ? marks[i + 1].start : t.length).trim() }; })
+    };
+  }
+  function scriptPieces(t) {
+    var cue = /\[[^\]]{15,}\]/g, pieces = [], last = 0, m;
+    while ((m = cue.exec(t))) {
+      if (m.index > last) pieces.push({ text: t.slice(last, m.index) });
+      pieces.push({ cue: m[0].slice(1, -1).trim() });
+      last = m.index + m[0].length;
+    }
+    if (last < t.length) pieces.push({ text: t.slice(last) });
+    return pieces;
+  }
+  // short bracketed fill-ins such as [__] or [date] are highlighted inline; long bracketed directions become cue lines
+  function blankText(t) {
+    var frag = document.createDocumentFragment();
+    String(t).split(/(\[[^\]]{1,14}\])/).forEach(function (part) {
+      if (!part) return;
+      frag.appendChild(/^\[[^\]]{1,14}\]$/.test(part) ? el("span", { class: "blank", text: part }) : document.createTextNode(part));
+    });
+    return frag;
+  }
+  function noteSection(key, title, body, hint) {
+    var closed = lsGet(FOLD_KEY) || {};
+    var d = el("details", { class: "nsec n-" + key, open: !closed[key] }, el("summary", null, el("span", { class: "ntitle", text: title })), el("div", { class: "nbody" }, hint ? el("p", { class: "nhint", text: hint }) : null, body));
+    d.addEventListener("toggle", function () {
+      var f = lsGet(FOLD_KEY) || {};
+      if (d.open) delete f[key]; else f[key] = 1;
+      lsSet(FOLD_KEY, Object.keys(f).length ? f : undefined);
+    });
+    return d;
+  }
+  function notesNode(slide) {
+    var parsed = parseNotes(slide.notes), s = parsed.sections, grid = el("div", { class: "ngrid" }), any = false;
+    if (parsed.intro) {
+      grid.appendChild(noteSection("other", "NOTES", el("div", null, (slide.notes && !Object.keys(s).length ? slide.notes : [parsed.intro]).map(function (p) { return el("p", { class: "nline" }, blankText(p)); }))));
+      any = true;
+    }
+    NOTE_SECTIONS.forEach(function (sec) {
+      var key = sec[0], t = s[key];
+      if (!t) return;
+      var body;
+      if (key === "materials") {
+        var items = t.split(/\s*;\s*/).map(function (x) { x = x.replace(/\.$/, "").trim(); return x.charAt(0).toUpperCase() + x.slice(1); }).filter(Boolean);
+        body = el("ul", { class: "nlist" }, items.map(function (x) { return el("li", null, blankText(x)); }));
+      } else if (key === "who") {
+        var lines = []; sentences(t).forEach(function (x) { x.split(/\s*;\s*/).forEach(function (y) { y = y.trim(); if (y) lines.push(y); }); });
+        body = el("div", null, lines.map(function (x) { return el("p", { class: "nline" }, blankText(x)); }));
+      } else if (key === "points") {
+        var np = numberedPoints(t);
+        if (np) {
+          body = el("div", null, np.lead ? el("p", { class: "nline" }, blankText(np.lead)) : null,
+            el("ol", { class: "npoints" }, np.items.map(function (x) { return el("li", null, el("span", { class: "nnum", text: x.n }), el("div", null, blankText(x.text))); })));
+        } else body = el("div", null, groupSentences(t, 2, 260).map(function (x) { return el("p", { class: "nline" }, blankText(x)); }));
+      } else {
+        var kids = [];
+        scriptPieces(t).forEach(function (pc) {
+          if (pc.cue) kids.push(el("div", { class: "cue" }, el("b", { text: "Cue" }), " ", blankText(pc.cue)));
+          else groupSentences(pc.text, 3, 340).forEach(function (x) { kids.push(el("p", { class: "sline" }, blankText(x))); });
+        });
+        body = el("div", { class: "nscript" }, kids);
+      }
+      var hint = key === "script" && parsed.hint ? parsed.hint.replace(/;\s*/g, ". ").replace(/^./, function (c) { return c.toUpperCase(); }).replace(/\.?$/, ".") : "";
+      grid.appendChild(noteSection(key, sec[1], body, hint));
+      any = true;
+    });
+    var box = el("div", { class: "notesbox" }, el("h3", { class: "nhead", text: "Speaker notes (staff only)" }), grid);
+    return any ? box : null;
+  }
+
   // ---------- save queue (answers survive a dropped connection) ----------
   function mk(act, item) { return act + "|" + item; }
   function setSave(state) {
@@ -759,10 +872,7 @@
       view.appendChild(ac);
     }
     if (slide.noteColors && slide.noteColors.length) view.appendChild(el("div", { class: "ctl" }, el("h3", { text: "Sticky notes" }), el("p", { class: "muted", style: "margin:0", text: "Phones can add notes here: " + slide.noteColors.map(function (c) { return COLORS[c]; }).join(", ") + ". See them on the Notes tab." })));
-    if (slide.notes && slide.notes.length) {
-      var d = el("details", { open: true }, el("summary", { text: "Speaker notes (staff only)" }), el("div", { class: "notes" }, el("ul", null, slide.notes.map(function (n) { return el("li", { text: n }); }))));
-      view.appendChild(d);
-    }
+    if (slide.notes && slide.notes.length) { var nn = notesNode(slide); if (nn) view.appendChild(nn); }
     refreshLive();
   }
   function goSlide(id) {
@@ -886,7 +996,8 @@
     function show() {
       clear(holder); var s = deck.slides[+sel.value]; if (!s) return;
       holder.appendChild(slideNode(s));
-      var tags = [].concat((s.activities || []).map(function (a) { return "activity: " + a.name + (a.attrs && a.attrs.clinic ? " clinic " + a.attrs.clinic : ""); }), (s.charts || []).map(function (c) { return "chart: " + c; }), s.noteColors ? ["notes: " + s.noteColors.join(", ")] : [], s.teamOnly ? ["team-only"] : []);
+      if (s.notes && s.notes.length) { var pn = notesNode(s); if (pn) holder.appendChild(pn); }
+      var tags =[].concat((s.activities || []).map(function (a) { return "activity: " + a.name + (a.attrs && a.attrs.clinic ? " clinic " + a.attrs.clinic : ""); }), (s.charts || []).map(function (c) { return "chart: " + c; }), s.noteColors ? ["notes: " + s.noteColors.join(", ")] : [], s.teamOnly ? ["team-only"] : []);
       holder.appendChild(el("p", { class: "muted small", text: tags.length ? "Tags: " + tags.join(" · ") : "No tags on this slide." }));
     }
     sel.addEventListener("change", show);
@@ -1015,6 +1126,7 @@
   }
   function boot() { bind(); resume(); }
   if (MOCK) {
+    window.PK_ROOM_TEST = { parseNotes: parseNotes, notesNode: notesNode };
     var s = document.createElement("script"); s.src = "dev-room.js"; s.onload = boot; s.onerror = boot; document.head.appendChild(s);
   } else boot();
 })();
