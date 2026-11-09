@@ -21,7 +21,7 @@
   // every activity in program order, with where it sits in the program
   var ORDER = [];
   PROGRAM.forEach(function (d, di) {
-    d.blocks.forEach(function (b) { b.acts.forEach(function (k) { ORDER.push({ key: k, def: ACT[k], day: di, dayName: d.day, block: b }); }); });
+    d.blocks.forEach(function (b) { b.acts.forEach(function (k) { if (!whereIs(k)) ORDER.push({ key: k, def: ACT[k], day: di, dayName: d.day, block: b }); }); });
   });
   function whereIs(key) { for (var i = 0; i < ORDER.length; i++) if (ORDER[i].key === key) return ORDER[i]; return null; }
   function titleOf(key) { return ACT[key] ? ACT[key].title : (key === "general" ? "General" : key || ""); }
@@ -29,7 +29,7 @@
   var S = {
     code: null, role: null, session: null, profile: {}, st: null, ver: null, skew: 0, joined: null, counts: {},
     tab: "acts", day: 0, mine: {}, queue: [], marks: {}, pollTimer: null, fails: 0, sig: "", showRes: {}, wall: [],
-    tallyPick: 0, running: false, stage: "live"
+    tallyPick: 0, running: false, stage: "live", sheetData: {}, sheetState: {}, sq: {}, openSheet: null
   };
 
   // ---------- helpers ----------
@@ -139,13 +139,14 @@
     var q = S.queue[0], key = mk(q.act, q.item);
     rpc("room_save_entry", { p_code: S.code, p_session: S.session, p_activity: q.act, p_item: q.item, p_payload: q.payload }).then(function (r) {
       S.flushing = false;
-      if (r.ok) { S.queue.shift(); S.hadSave = true; saveQueue(); setMark(key, "saved"); flush(); return; }
+      // remove exactly the entry that was sent; a newer answer to the same question stays queued
+      if (r.ok) { S.queue = S.queue.filter(function (x) { return x !== q; }); S.hadSave = true; saveQueue(); if (!S.queue.some(function (x) { return mk(x.act, x.item) === key; })) setMark(key, "saved"); flush(); return; }
       if (r.reason === "not_joined" && !S.rejoined) {
         S.rejoined = true;
         joinCall(S.profile).then(function () { flush(); }).catch(function () { setSave("queued"); });
         return;
       }
-      S.queue.shift(); saveQueue(); setMark(key, "closed");
+      S.queue = S.queue.filter(function (x) { return x !== q; }); saveQueue(); setMark(key, "closed");
       toast(r.reason === "not_open" ? "That activity closed before your answer was saved." : "Your answer could not be saved. Tell the PK team.");
       setSave("fail"); flush();
     }).catch(function () {
@@ -251,7 +252,8 @@
     $("gate").hidden = true; $("app").hidden = false; S.running = true;
     document.body.classList.toggle("proj", isProj());
     $("roleChip").hidden = false; $("menuBtn").hidden = false;
-    S.mine = {}; loadQueue(); S.ver = null;
+    S.mine = {}; loadQueue(); loadSheetQueue(); S.ver = null;
+    if (Object.keys(S.sq).length) setTimeout(flushSheets, 1500);
     buildTabs();
     var go = function () { loop(); };
     if (S.role === "participant") {
@@ -307,7 +309,7 @@
     if (S.fails === 0 && $("saveState").className.indexOf("warn") >= 0 && !S.queue.length) setSave(S.hadSave ? "saved" : null);
   }
   document.addEventListener("visibilitychange", function () { if (!document.hidden && S.running) pollNow(); });
-  window.addEventListener("online", function () { if (S.running) { pollNow(); flush(); } });
+  window.addEventListener("online", function () { if (S.running) { pollNow(); flush(); flushSheets(); } });
 
   // ---------- render dispatch ----------
   function render() {
@@ -350,6 +352,8 @@
       view.appendChild(el("div", { class: "card wait" }, el("h2", { text: "Waiting for the next activity" }),
         el("p", { class: "muted", style: "margin:0", text: "Your facilitators will tell you when to start. This page updates by itself." })));
     }
+    if (S.role === "device") view.appendChild(el("details", { class: "apanel locked small guide" }, el("summary", { text: "Table guide (D11)" }),
+      AG.guide.map(function (g) { return el("div", null, el("b", { text: g[0] }), el("p", { text: g[1] })); })));
     view.appendChild(checkinPanel());
   }
   function render2() { S.sig = ""; renderPart(true); window.scrollTo(0, 0); }
@@ -359,14 +363,37 @@
     if (!def) return null;
     if (def.kind === "link") return linkPanel(def, state);
     if (def.kind === "sheet") {
-      return el("section", { class: "apanel locked" }, el("h3", null, def.title, " ", el("span", { class: "state " + state, text: stateLabel(state) })),
-        el("p", { class: "help", style: "margin:0", text: S.role === "device" ? "The group sheet for this activity is not ready yet. Follow your facilitator and record on paper for now." : "This activity is done at your table. Follow your facilitator." }));
+      if (def.staffOnly) return null;
+      var head = el("h3", null, def.title, " ", el("span", { class: "state " + state, text: stateLabel(state) }));
+      if (S.role === "device") {
+        var mine = deviceSheetFor(def);
+        if (!mine) return null;
+        var sbox = el("section", { class: "apanel sheetpanel" + (state === "open" ? "" : " locked") }, head);
+        sbox.appendChild(el("p", { class: "help", text: state === "open" ? def.intro : state === "closed" ? "Closed. The sheet is saved; staff can still correct it." : "This sheet is on the room screen." }));
+        if (def.spreadOf) sbox.appendChild(el("div", { id: "spread_" + key }, el("p", { class: "muted small", text: "Loading your table's silent scores..." })));
+        var holder = el("div");
+        holder.appendChild(editorFor(key, def, mine, state === "open"));
+        sbox.appendChild(holder);
+        loadSheets(key).then(function () { redrawSheet(key, mine); }).catch(function () {});
+        if (def.spreadOf) loadSpread(key, def);
+        return sbox;
+      }
+      if (state !== "open") return null;
+      return el("section", { class: "apanel locked" }, head, el("p", { class: "help", style: "margin:0", text: "This activity is done at your table, on the table's device. Follow your facilitator." }));
+    }
+    if (def.kind === "gallery") {
+      var gbox = el("section", { class: "apanel" + (state === "open" ? "" : " locked") }, el("h3", null, def.title, " ", el("span", { class: "state " + state, text: stateLabel(state) })));
+      if (S.role === "device") { gbox.appendChild(el("p", { class: "help", style: "margin:0", text: "Each person marks indicators on their own phone." })); return gbox; }
+      if (state !== "open") { gbox.appendChild(el("p", { class: "help", style: "margin:0", text: state === "closed" ? "This activity is closed." : "The result is on the screen." })); return gbox; }
+      galleryPanel(key, def, gbox);
+      return gbox;
     }
     var box = el("section", { class: "apanel" + (state === "open" ? "" : " locked") });
     box.appendChild(el("h3", null, def.title, " ", el("span", { class: "state " + state, text: stateLabel(state) })));
     if (state !== "open") {
       box.appendChild(el("p", { class: "help", style: "margin:0 0 10px", text: state === "closed" ? "This activity is closed." : "The result is on the screen." }));
       var shown = false;
+      if (def.grid) { box.appendChild(el("p", { class: "help", style: "margin:0", text: "Your scores are saved." })); return box; }
       def.items.forEach(function (it) {
         var m = S.mine[mk(key, it.id)]; if (!m) return;
         if (!shown) { box.appendChild(el("div", { class: "help", style: "margin-top:6px", text: "Your saved answer:" })); shown = true; }
@@ -375,6 +402,7 @@
       return box;
     }
     if (S.role === "device") { box.appendChild(el("p", { class: "help", text: "Personal answers are entered on each person's own phone. The facilitators will tell you how this table takes part." })); return box; }
+    if (def.grid) { box.appendChild(gridBlock(key, def)); return box; }
     var holders = {};
     def.items.forEach(function (it) { var q = itemBlock(key, def, it, holders); holders[it.id] = q; box.appendChild(q.node); });
     refreshShowIf(def, key, holders);
@@ -488,6 +516,386 @@
     return box;
   }
 
+  // ---------- group sheets (D9, D2, D10, D5, D6, D7, registers) ----------
+  // A sheet is a flat set of cells: "section.row.column" = value. Rows that tables add are listed in "section._rows".
+  // Changes are saved cell by cell, so two people editing different cells of one sheet do not overwrite each other.
+  var SHEET_NAMES = { T1: "Table 1", T2: "Table 2", T3: "Table 3", T4: "Table 4", C1: "Clinic 1", C2: "Clinic 2", C3: "Clinic 3", ROOM: "Staff register" };
+  function regionMin(code) {
+    var r = AG.regions.filter(function (x) { return x[0] === code; })[0];
+    if (!r) return null;
+    return { name: r[1], register: Math.round(AG.nat.register * r[2] / AG.nat.pop), screen: Math.round(AG.nat.screen * r[2] / AG.nat.pop) };
+  }
+  function fmtN(n) { return Number(n).toLocaleString("en-US"); }
+  function sheetKey(act, sheet) { return act + "|" + sheet; }
+  function sheetBody(act, sheet) { return (S.sheetData[sheetKey(act, sheet)] || {}).body || {}; }
+  function rowIds(sec, body) {
+    if (sec.fixedRows) return sec.fixedRows.map(function (r) { return r[0]; });
+    var pre = (sec.preset || []).map(function (p, i) { return "p" + i; });
+    var dyn = Array.isArray(body[sec.id + "._rows"]) ? body[sec.id + "._rows"] : [];
+    return pre.concat(dyn);
+  }
+  function cellVal(body, sec, rowId, col) {
+    var k = sec.id + "." + rowId + "." + col.id;
+    if (body[k] != null) return body[k];
+    if (sec.preset && sec.presetCol === col.id && /^p\d+$/.test(rowId)) return sec.preset[+rowId.slice(1)] || "";
+    return "";
+  }
+  // ----- the save queue for sheets (survives a dropped connection) -----
+  function sqKey() { return "pk_room_sq_" + fnv(S.code); }
+  function loadSheetQueue() { S.sq = lsGet(sqKey()) || {}; }
+  function queueCell(act, sheet, k, v) {
+    var q = sheetKey(act, sheet);
+    S.sq[q] = S.sq[q] || {}; S.sq[q][k] = v;
+    var d = S.sheetData[q] = S.sheetData[q] || { body: {} }; d.body[k] = v;
+    lsSet(sqKey(), S.sq); setSave("saving");
+    clearTimeout(S.sqTimer); S.sqTimer = setTimeout(flushSheets, 700);
+  }
+  function flushSheets() {
+    if (S.sqBusy) return;
+    var keys = Object.keys(S.sq || {});
+    if (!keys.length) { if (S.role === "device" || isStaff()) setSave(S.sqSaved ? "saved" : null); return; }
+    S.sqBusy = true;
+    var q = keys[0], parts = q.split("|"), patch = S.sq[q];
+    S.sq[q] = {}; delete S.sq[q];
+    rpc("room_save_sheet", { p_code: S.code, p_session: S.session, p_activity: parts[0], p_sheet: parts[1], p_patch: patch }).then(function (r) {
+      S.sqBusy = false;
+      if (r.ok) { S.sqSaved = true; lsSet(sqKey(), Object.keys(S.sq).length ? S.sq : undefined); flushSheets(); return; }
+      lsSet(sqKey(), Object.keys(S.sq).length ? S.sq : undefined);
+      toast(r.reason === "not_open" ? "This sheet is closed now. Your last change was not saved." : "A change could not be saved (" + (r.reason || "unknown") + ").");
+      setSave("fail"); flushSheets();
+    }).catch(function () {
+      // put the patch back and try again later
+      S.sqBusy = false; S.sq[q] = Object.assign(patch, S.sq[q] || {}); lsSet(sqKey(), S.sq); setSave("queued");
+      clearTimeout(S.sqTimer); S.sqTimer = setTimeout(flushSheets, 5000);
+    });
+  }
+  function pendingCell(act, sheet, k) { var p = S.sq && S.sq[sheetKey(act, sheet)]; return !!(p && Object.prototype.hasOwnProperty.call(p, k)); }
+  function loadSheets(act) {
+    return rpc("room_get_sheets", { p_code: S.code, p_session: S.session, p_activity: act }).then(function (r) {
+      if (!r.ok) return r;
+      S.sheetState[act] = r.state;
+      r.sheets.forEach(function (sh) {
+        var q = sheetKey(act, sh.sheet), mine = S.sq && S.sq[q];
+        var body = Object.assign({}, sh.body, mine || {});   // my unsent edits win
+        S.sheetData[q] = { body: body, at: sh.updated_at };
+      });
+      return r;
+    });
+  }
+  // ----- drawing one sheet: editable for its device (while open) and for staff; read-only otherwise -----
+  function input(act, sheet, k, value, col, editable) {
+    var node;
+    if (col.type === "select" || col.type === "region") {
+      var opts = col.type === "region" ? AG.regions.map(function (r) { return [r[0], r[1]]; }) : (col.options || []).map(function (o) { return [o, o]; });
+      if (!editable) return el("div", { class: "cellro", text: col.type === "region" ? ((regionMin(value) || {}).name || "") : value });
+      node = el("select", { "data-k": k, "aria-label": col.label }, [el("option", { value: "", text: "—" })].concat(opts.map(function (o) { return el("option", { value: o[0], selected: o[0] === value, text: o[1] }); })));
+      node.addEventListener("change", function () { queueCell(act, sheet, k, node.value); if (col.type === "region") { var box = node.parentNode.parentNode.querySelector(".regmin"); if (box) fillRegMin(box, node.value); } });
+      return node;
+    }
+    if (col.type === "check") {
+      if (!editable) return el("div", { class: "cellro", text: value ? "Yes" : "" });
+      node = el("input", { type: "checkbox", "data-k": k, checked: !!value, "aria-label": col.label, style: "width:22px;height:22px" });
+      node.addEventListener("change", function () { queueCell(act, sheet, k, node.checked); });
+      return node;
+    }
+    if (!editable) return el("div", { class: "cellro", text: value });
+    node = el("textarea", { "data-k": k, rows: "2", value: value, "aria-label": col.label });
+    var t; node.addEventListener("input", function () { clearTimeout(t); t = setTimeout(function () { queueCell(act, sheet, k, node.value); }, 600); });
+    node.addEventListener("blur", function () { clearTimeout(t); if ((sheetBody(act, sheet)[k] || "") !== node.value) queueCell(act, sheet, k, node.value); });
+    return node;
+  }
+  function fillRegMin(box, code) {
+    clear(box); var m = regionMin(code); if (!m) return;
+    box.appendChild(el("span", { text: "Minimum to register: " }, el("b", { text: fmtN(m.register) })));
+    box.appendChild(el("span", { text: " · to screen: " }, el("b", { text: fmtN(m.screen) })));
+  }
+  function sheetView(act, def, sheet, editable) {
+    var body = sheetBody(act, sheet), wrap = el("div", { class: "sheet", "data-sheet": sheetKey(act, sheet) });
+    if (def.sideBySheet && def.sideBySheet[sheet]) wrap.appendChild(el("div", { class: "sidebar " + def.sideBySheet[sheet].toLowerCase(), text: "Your side: the case " + def.sideBySheet[sheet].toUpperCase() + " the carried direction" }));
+    if (def.levelBySheet && def.levelBySheet[sheet]) wrap.appendChild(el("div", { class: "sidebar", text: "Your level: " + def.levelBySheet[sheet] }));
+    def.sections.forEach(function (sec) {
+      var box = el("section", { class: "ssec" }, el("h4", { text: sec.title }));
+      if (sec.help) box.appendChild(el("p", { class: "help", text: sec.help }));
+      if (sec.type === "rows") {
+        var ids = rowIds(sec, body);
+        ids.forEach(function (rid, i) {
+          var card = el("div", { class: "srow" });
+          var head = el("div", { class: "srowh" }, el("b", { text: sec.fixedRows ? sec.fixedRows[i][1] : (sec.preset && i < sec.preset.length ? "" : "") + "#" + (i + 1) }));
+          if (def.flagMissing) {
+            var miss = def.flagMissing.filter(function (c) { return !String(body[sec.id + "." + rid + "." + c] || "").trim(); });
+            if (miss.length) head.appendChild(el("span", { class: "state closed", text: "Follow up: no " + miss.map(function (c) { return c === "when" ? "date" : c; }).join(" or ") }));
+          }
+          if (editable && !sec.fixedRows && !/^p\d+$/.test(rid)) head.appendChild(el("button", { type: "button", class: "linkbtn", text: "Remove", onclick: function () {
+            if (!confirm("Remove this row?")) return;
+            var list = (Array.isArray(sheetBody(act, sheet)[sec.id + "._rows"]) ? sheetBody(act, sheet)[sec.id + "._rows"] : []).filter(function (x) { return x !== rid; });
+            queueCell(act, sheet, sec.id + "._rows", list); redrawSheet(act, sheet);
+          } }));
+          card.appendChild(head);
+          var grid = el("div", { class: "sgrid" });
+          sec.cols.forEach(function (col) {
+            var k = sec.id + "." + rid + "." + col.id, v = cellVal(body, sec, rid, col);
+            var f = el("label", { class: "sfield" + (col.type === "check" ? " check" : "") }, el("span", { class: "slab", text: col.label }), input(act, sheet, k, v, col, editable));
+            grid.appendChild(f);
+            if (col.type === "region") { var rm = el("div", { class: "regmin" }); fillRegMin(rm, v); f.appendChild(rm); }
+          });
+          card.appendChild(grid); box.appendChild(card);
+        });
+        if (!ids.length) box.appendChild(el("p", { class: "muted small", text: "No rows yet." }));
+        if (editable && sec.add) box.appendChild(el("button", { type: "button", class: "btn ghost small", text: "+ " + sec.add, onclick: function () {
+          var cur = sheetBody(act, sheet)[sec.id + "._rows"], list = Array.isArray(cur) ? cur.slice() : [];
+          list.push("r" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5));
+          queueCell(act, sheet, sec.id + "._rows", list); redrawSheet(act, sheet);
+        } }));
+      } else if (sec.type === "matrix") {
+        sec.rows.forEach(function (r) {
+          var card = el("div", { class: "srow" }, el("div", { class: "srowh" }, el("b", { text: r[1] })));
+          sec.opts.forEach(function (o) {
+            var ks = sec.id + "." + r[0] + "." + o + ".s", kr = sec.id + "." + r[0] + "." + o + ".r";
+            card.appendChild(el("div", { class: "mline" }, el("span", { class: "mopt", text: o }),
+              input(act, sheet, ks, body[ks] || "", { type: "select", options: ["1", "2", "3", "4", "5"], label: r[1] + ", option " + o + ": score" }, editable),
+              el("div", { class: "mreason" }, input(act, sheet, kr, body[kr] || "", { label: r[1] + ", option " + o + ": reason" }, editable))));
+          });
+          var kd = sec.id + "." + r[0] + ".dis";
+          card.appendChild(el("label", { class: "sfield" }, el("span", { class: "slab", text: "Disagreements and minority positions" }), input(act, sheet, kd, body[kd] || "", { label: "Disagreements" }, editable)));
+          box.appendChild(card);
+        });
+      } else if (sec.type === "perOption") {
+        sec.opts.forEach(function (o) {
+          var k = sec.id + "." + o;
+          box.appendChild(el("label", { class: "sfield" }, el("span", { class: "slab", text: "Option " + o }), input(act, sheet, k, body[k] || "", { label: "Option " + o }, editable)));
+        });
+      } else if (sec.type === "fields") {
+        sec.fields.forEach(function (fd) {
+          var k = sec.id + "." + fd.id;
+          box.appendChild(el("label", { class: "sfield" }, el("span", { class: "slab", text: fd.label }), input(act, sheet, k, body[k] || "", fd, editable)));
+        });
+      }
+      wrap.appendChild(box);
+    });
+    if (def.weighted) wrap.appendChild(weightedNode([{ sheet: sheet, body: body }]));
+    if (def.prompts) wrap.appendChild(el("details", { class: "prompts" }, el("summary", { text: "Prompts to test your top three" }), el("ul", null, def.prompts.map(function (p) { return el("li", { text: p }); }))));
+    return wrap;
+  }
+  function redrawSheet(act, sheet) {
+    var old = document.querySelector('.sheet[data-sheet="' + sheetKey(act, sheet) + '"]');
+    if (!old) return;
+    var editable = old.getAttribute("data-edit") === "1", nw = sheetView(act, ACT[act], sheet, editable);
+    nw.setAttribute("data-edit", editable ? "1" : "0");
+    old.parentNode.replaceChild(nw, old);
+  }
+  // fresh data from the server: update the cells nobody is typing in; redraw if rows were added elsewhere
+  function syncSheet(act, sheet) {
+    var node = document.querySelector('.sheet[data-sheet="' + sheetKey(act, sheet) + '"]');
+    if (!node) return;
+    var body = sheetBody(act, sheet), def = ACT[act], need = false;
+    def.sections.forEach(function (sec) {
+      if (sec.type !== "rows") return;
+      var shown = node.querySelectorAll(".ssec")[def.sections.indexOf(sec)];
+      if (shown && shown.querySelectorAll(".srow").length !== rowIds(sec, body).length) need = true;
+    });
+    if (need && !node.contains(document.activeElement)) { redrawSheet(act, sheet); return; }
+    [].forEach.call(node.querySelectorAll("[data-k]"), function (inp) {
+      var k = inp.getAttribute("data-k");
+      if (inp === document.activeElement || pendingCell(act, sheet, k) || body[k] === undefined) return;
+      if (inp.type === "checkbox") inp.checked = !!body[k];
+      else if (inp.value !== String(body[k])) inp.value = body[k];
+    });
+  }
+  function editorFor(act, def, sheet, editable) {
+    var v = sheetView(act, def, sheet, editable); v.setAttribute("data-edit", editable ? "1" : "0"); return v;
+  }
+  // ----- D2 weighted totals: carried weights (Settings tab) and equal weights -----
+  function weightsCarried() {
+    var w = setting("d2_weights"), out = {}, any = false;
+    AG.crit.forEach(function (c) { var n = w && +w[c[0]]; if (n > 0) { out[c[0]] = n; any = true; } });
+    return any ? out : null;
+  }
+  function weightedFor(body) {
+    var carried = weightsCarried(), res = {};
+    AG.opts.forEach(function (o) {
+      var sumE = 0, nE = 0, sumC = 0, wC = 0;
+      AG.crit.forEach(function (c) {
+        var s = +body["m." + c[0] + "." + o + ".s"]; if (!s) return;
+        sumE += s; nE += 1;
+        if (carried && carried[c[0]]) { sumC += s * carried[c[0]]; wC += carried[c[0]]; }
+      });
+      res[o] = { equal: nE ? sumE / nE : null, carried: wC ? sumC / wC : null, scored: nE };
+    });
+    return res;
+  }
+  function weightedNode(list) {
+    var carried = weightsCarried(), tb = el("table", { class: "restable" });
+    var head = el("tr", null, el("th", { text: list.length > 1 ? "Table" : "Weighted total (1 to 5)" }));
+    AG.opts.forEach(function (o) { head.appendChild(el("th", { text: "Option " + o })); });
+    tb.appendChild(head);
+    var avg = {}; AG.opts.forEach(function (o) { avg[o] = { c: [], e: [] }; });
+    list.forEach(function (x) {
+      var w = weightedFor(x.body), tr = el("tr", null, el("td", { text: list.length > 1 ? SHEET_NAMES[x.sheet] : "This table" }));
+      AG.opts.forEach(function (o) {
+        var r = w[o]; if (r.carried != null) avg[o].c.push(r.carried); if (r.equal != null) avg[o].e.push(r.equal);
+        tr.appendChild(el("td", { class: "n" }, carried ? el("div", { text: r.carried != null ? r.carried.toFixed(2) : "—" }) : null,
+          el("div", { class: carried ? "muted small" : "", text: (r.equal != null ? r.equal.toFixed(2) : "—") + (carried ? " equal" : "") }),
+          r.scored < 8 ? el("div", { class: "muted small", text: r.scored + " of 8 scored" }) : null));
+      });
+      tb.appendChild(tr);
+    });
+    if (list.length > 1) {
+      var tr2 = el("tr", null, el("td", { text: "Average of tables" }));
+      AG.opts.forEach(function (o) {
+        var m = function (a) { return a.length ? (a.reduce(function (p, q) { return p + q; }, 0) / a.length).toFixed(2) : "—"; };
+        tr2.appendChild(el("td", { class: "n" }, carried ? el("div", { text: m(avg[o].c) }) : null, el("div", { class: carried ? "muted small" : "", text: m(avg[o].e) + (carried ? " equal" : "") })));
+      });
+      tb.appendChild(tr2);
+    }
+    return el("div", { class: "ssec" }, el("h4", { text: "Weighted totals" }),
+      el("p", { class: "help", text: carried ? "Top number: the carried weights. Below: equal weights. Both on the 1 to 5 scale." : "Equal weights, on the 1 to 5 scale. Staff can enter the carried weights on the Settings tab." }), tb);
+  }
+  // ----- D2: the table's own silent-score spread, shown on its group device -----
+  function spreadNode(rows, title) {
+    var by = {};
+    (rows || []).forEach(function (r) { (by[r.item] = by[r.item] || []).push(r); });
+    var tb = el("table", { class: "restable spread" }), head = el("tr", null, el("th", { text: "Question" }));
+    AG.opts.forEach(function (o) { head.appendChild(el("th", { text: o })); }); tb.appendChild(head);
+    AG.crit.forEach(function (c) {
+      var tr = el("tr", null, el("td", { text: c[1] }));
+      AG.opts.forEach(function (o) {
+        var rs = by[c[0] + "_" + o] || [], vals = [];
+        rs.forEach(function (r) { for (var i = 0; i < (r.n || 0); i++) vals.push(+r.val); });
+        vals.sort(function (a, b) { return a - b; });
+        var wide = vals.length && vals[vals.length - 1] - vals[0] >= 2;
+        tr.appendChild(el("td", { class: "n" + (wide ? " flag" : "") }, vals.length ? vals.join(" ") : "—", wide ? el("div", { class: "small", text: "discuss" }) : null));
+      });
+      tb.appendChild(tr);
+    });
+    return el("div", { class: "ssec" }, el("h4", { text: title }), el("p", { class: "help", text: "Each number is one person's silent score. Discuss where scores differ by two points or more." }), tb);
+  }
+  // ----- D2 silent scores on a phone: one row of 1 to 5 per option, for each question -----
+  function gridBlock(key, def) {
+    var box = el("div");
+    if (def.help) box.appendChild(el("p", { class: "help", text: def.help }));
+    def.grid.rows.forEach(function (r) {
+      var q = el("div", { class: "q gq" }, el("span", { class: "t", text: r[1] }));
+      def.grid.cols.forEach(function (o) {
+        var ik = r[0] + "_" + o, mkey = mk(key, ik), cur = S.mine[mkey];
+        var sc = el("div", { class: "scale gscale" });
+        def.grid.scale.forEach(function (v) {
+          var inp = el("input", { type: "radio", name: mkey, value: v, checked: cur && cur.v === v });
+          var l = el("label", { class: cur && cur.v === v ? "sel" : "" }, inp, el("span", { text: v }));
+          inp.addEventListener("change", function () { [].forEach.call(sc.children, function (x) { x.classList.remove("sel"); }); l.classList.add("sel"); saveItem(key, ik, { v: v }); });
+          sc.appendChild(l);
+        });
+        q.appendChild(el("div", { class: "gline" }, el("span", { class: "mopt", text: o }), sc));
+      });
+      box.appendChild(q);
+    });
+    return box;
+  }
+  function gridResultsNode(def, rows) {
+    var by = {};
+    (rows || []).forEach(function (r) { var a = by[r.item] = by[r.item] || []; for (var i = 0; i < (r.n || 0); i++) a.push(+r.val); });
+    var tb = el("table", { class: "restable" }), head = el("tr", null, el("th", { text: "Question (room average)" }));
+    def.grid.cols.forEach(function (o) { head.appendChild(el("th", { text: "Option " + o })); }); tb.appendChild(head);
+    var means = {};
+    def.grid.rows.forEach(function (r) {
+      var tr = el("tr", null, el("td", { text: r[1] }));
+      def.grid.cols.forEach(function (o) {
+        var v = by[r[0] + "_" + o] || [];
+        if (!v.length) { tr.appendChild(el("td", { class: "n", text: "—" })); return; }
+        var m = v.reduce(function (a, b) { return a + b; }, 0) / v.length;
+        (means[o] = means[o] || {})[r[0]] = m;
+        tr.appendChild(el("td", { class: "n" }, el("div", { text: m.toFixed(1) }), el("div", { class: "muted small", text: Math.min.apply(null, v) + "–" + Math.max.apply(null, v) + " · n " + v.length })));
+      });
+      tb.appendChild(tr);
+    });
+    var carried = weightsCarried();
+    [["Equal weights", null], ["Carried weights", carried]].forEach(function (w) {
+      if (w[0] === "Carried weights" && !carried) return;
+      var tr = el("tr", { class: "total" }, el("td", { text: w[0] }));
+      def.grid.cols.forEach(function (o) {
+        var s = 0, n = 0;
+        def.grid.rows.forEach(function (r) { var m = means[o] && means[o][r[0]]; if (m == null) return; var wt = w[1] ? (w[1][r[0]] || 0) : 1; s += m * wt; n += wt; });
+        tr.appendChild(el("td", { class: "n", text: n ? (s / n).toFixed(2) : "—" }));
+      });
+      tb.appendChild(tr);
+    });
+    return tb;
+  }
+  // ----- gallery walk: phones mark up to three indicators they support, from the revealed D6 matrices -----
+  function galleryOptions(def) {
+    var src = ACT[def.source], out = [];
+    (src.sheets || []).forEach(function (sh) {
+      var body = sheetBody(def.source, sh), sec = src.sections.filter(function (s) { return s.id === def.sourceSection; })[0];
+      rowIds(sec, body).forEach(function (rid) {
+        var txt = String(body[sec.id + "." + rid + "." + def.sourceCol] || "").trim();
+        if (!txt) return;
+        if (body[sec.id + "." + rid + ".accept"] === "Contest") return;
+        out.push({ id: sh + ":" + rid, level: (src.levelBySheet || {})[sh] || SHEET_NAMES[sh], text: txt });
+      });
+    });
+    return out;
+  }
+  function galleryPanel(key, def, box) {
+    var holder = el("div", null, el("p", { class: "muted", text: "Loading the matrices..." }));
+    box.appendChild(holder);
+    loadSheets(def.source).then(function (r) {
+      clear(holder);
+      if (!r || !r.ok || r.state !== "revealed") { holder.appendChild(el("p", { class: "help", text: "The matrices are not shown yet. Your facilitator will put them on the room screen first." })); return; }
+      var opts = galleryOptions(def);
+      if (!opts.length) { holder.appendChild(el("p", { class: "help", text: "No indicators were written on the matrices." })); return; }
+      if (def.help) holder.appendChild(el("p", { class: "help", text: def.help }));
+      [["support", "Indicators I support (up to three)", 3], ["oppose", "Indicators I cannot support", 99]].forEach(function (part) {
+        var mkey = mk(key, part[0]), cur = S.mine[mkey], chosen = cur && Array.isArray(cur.v) ? cur.v.slice() : [], mark = el("span", { class: "saved-mark" });
+        S.marks[mkey] = mark;
+        var q = el("div", { class: "q" }, el("span", { class: "t" }, part[1], mark)), last = null;
+        opts.forEach(function (o) {
+          if (o.level !== last) { q.appendChild(el("div", { class: "glevel", text: o.level })); last = o.level; }
+          var inp = el("input", { type: "checkbox", value: o.id, checked: chosen.indexOf(o.id) >= 0 });
+          var l = el("label", { class: "opt" + (chosen.indexOf(o.id) >= 0 ? " sel" : "") }, inp, el("span", { text: o.text }));
+          inp.addEventListener("change", function () {
+            var i = chosen.indexOf(o.id);
+            if (inp.checked && i < 0) { if (chosen.length >= part[2]) { inp.checked = false; toast("You can choose up to " + part[2] + "."); return; } chosen.push(o.id); }
+            if (!inp.checked && i >= 0) chosen.splice(i, 1);
+            l.classList.toggle("sel", inp.checked); saveItem(key, part[0], { v: chosen.slice() });
+          });
+          q.appendChild(l);
+        });
+        holder.appendChild(q);
+      });
+    }).catch(function () { clear(holder); holder.appendChild(el("p", { class: "help", text: "Could not load the matrices. Use Menu, then Refresh." })); });
+  }
+  function galleryResultsNode(def, rows) {
+    var opts = galleryOptions(def), label = {}, count = { support: {}, oppose: {} };
+    opts.forEach(function (o) { label[o.id] = o; });
+    (rows || []).forEach(function (r) { if (count[r.item]) count[r.item][r.val] = (count[r.item][r.val] || 0) + (r.n || 0); });
+    var box = el("div"), levels = [];
+    opts.forEach(function (o) { if (levels.indexOf(o.level) < 0) levels.push(o.level); });
+    levels.forEach(function (lv) {
+      var list = opts.filter(function (o) { return o.level === lv; });
+      var sup = list.slice().sort(function (a, b) { return (count.support[b.id] || 0) - (count.support[a.id] || 0); }).slice(0, 3);
+      var opp = list.slice().sort(function (a, b) { return (count.oppose[b.id] || 0) - (count.oppose[a.id] || 0); })[0];
+      var sec = el("div", { class: "ssec" }, el("h4", { text: lv }));
+      sup.forEach(function (o) { sec.appendChild(el("div", { class: "gres" }, el("b", { text: String(count.support[o.id] || 0) }), " ", o.text)); });
+      if (opp && count.oppose[opp.id]) sec.appendChild(el("div", { class: "gres opp" }, el("b", { text: String(count.oppose[opp.id]) }), " cannot support: ", opp.text));
+      box.appendChild(sec);
+    });
+    if (!levels.length) box.appendChild(el("p", { class: "muted", text: "No indicators to show." }));
+    return box;
+  }
+  function loadSpread(key, def) {
+    return rpc("room_table_spread", { p_code: S.code, p_session: S.session, p_activity: def.spreadOf }).then(function (r) {
+      var box = $("spread_" + key); if (!box) return;
+      clear(box);
+      if (!r.ok) { box.appendChild(el("p", { class: "muted small", text: "Your table's silent scores are not available." })); return; }
+      box.appendChild(spreadNode(r.rows, "Your table's silent scores"));
+    }).catch(function () {});
+  }
+  // which sheets a group device can fill for an activity
+  function deviceSheetFor(def) {
+    var mine = S.profile.sheet;
+    if (!def || def.kind !== "sheet" || def.staffOnly || !mine) return null;
+    return (def.sheets || []).indexOf(mine) >= 0 ? mine : null;
+  }
+
   // ---------- results tables (staff and room screen) ----------
   function resultsNode(key, rows, role, onlyItem) {
     var def = ACT[key], box = el("div"), byItem = {}, items = [];
@@ -550,7 +958,7 @@
   }
   function renderProj() {
     var view = $("view"), key = focusKey(), def = ACT[key], st = key ? actState(key) : "none", wall = !!setting("show_wall");
-    var sig = [key, st, wall ? "w" : ""].join("~");
+    var sig = [key, st, wall ? "w" : "", setting("focus_sheet") || "", JSON.stringify(setting("d2_weights") || {})].join("~");
     if (sig === S.sig) return;
     S.sig = sig; clear(view);
     if (!def || st === "none") {
@@ -560,12 +968,16 @@
       if (w) card.appendChild(el("div", { class: "pkick", text: w.dayName.split(" · ")[0] + " · " + w.block.session + " · " + w.block.name }));
       card.appendChild(el("h2", { class: "ptitle", text: def.title }));
       if (st === "open" || st === "closed") {
-        if (def.kind === "form") card.appendChild(promptItems(def));
-        else card.appendChild(el("p", { class: "muted", text: def.kind === "link" ? "Use the evaluation link or QR code shown by your facilitator." : "Work on your table's sheet." }));
-        card.appendChild(el("div", { class: "pstate" }, st === "open" ? el("span", { class: "counts", "data-count": key }) : el("span", { class: "state closed", text: "Closed. Thank you." })));
+        if (def.kind === "form" && def.grid) card.appendChild(el("p", { class: "plabel", text: "Score each option from 1 to 5 on the eight questions, alone and in silence." }));
+        else if (def.kind === "form") card.appendChild(promptItems(def));
+        else if (def.kind === "sheet") card.appendChild(el("p", { class: "plabel", text: def.intro || "" }));
+        else if (def.kind === "gallery") card.appendChild(el("p", { class: "plabel", text: def.help || "" }));
+        else card.appendChild(el("p", { class: "muted", text: "Use the evaluation link or QR code shown by your facilitator." }));
+        var showCount = def.kind === "form" || def.kind === "gallery";
+        card.appendChild(el("div", { class: "pstate" }, st === "open" ? (showCount ? el("span", { class: "counts", "data-count": key }) : el("span", { class: "state open", text: "In progress" })) : el("span", { class: "state closed", text: "Closed. Thank you." })));
       } else if (st === "revealed") {
-        if (def.kind === "form") card.appendChild(el("div", { id: "resbody_" + key }));
-        else card.appendChild(el("p", { class: "muted", text: "Revealed." }));
+        if (def.kind === "link") card.appendChild(el("p", { class: "muted", text: "Revealed." }));
+        else card.appendChild(el("div", { id: "resbody_" + key }, el("p", { class: "muted", text: "Loading..." })));
       }
       view.appendChild(card);
     }
@@ -574,25 +986,64 @@
 
   // data that is fetched while a result or the wall is on screen
   function refreshLive() {
-    var jobs = [], key = focusKey();
+    var jobs = [], key = focusKey(), fdef = ACT[key];
     if (isProj()) {
-      if (ACT[key] && ACT[key].kind === "form" && actState(key) === "revealed") jobs.push(fetchResults(key, "projector"));
+      if (fdef && (fdef.kind === "form" || fdef.kind === "gallery") && actState(key) === "revealed") jobs.push(fetchResults(key, "projector"));
+      if (fdef && fdef.kind === "sheet" && actState(key) === "revealed") jobs.push(drawRoomSheets(key));
       if (setting("show_wall")) jobs.push(fetchWall());
     }
     if (isStaff()) {
       Object.keys(S.showRes).forEach(function (k) { if (S.showRes[k]) jobs.push(fetchResults(k, "staff")); });
       if (S.tab === "notes") jobs.push(fetchWall());
+      if (S.openSheet && S.tab === "acts") {
+        var os = S.openSheet.split("|");
+        jobs.push(loadSheets(os[0]).then(function () { syncSheet(os[0], os[1]); var d = ACT[os[0]]; if (d && d.spreadOf) staffSpread(os[0], os[1]); }));
+      }
+    }
+    if (S.role === "device") {
+      openKeys().forEach(function (k) {
+        var d = ACT[k], mine = deviceSheetFor(d);
+        if (!mine) return;
+        jobs.push(loadSheets(k).then(function () { syncSheet(k, mine); }));
+        if (d.spreadOf) jobs.push(loadSpread(k, d));
+      });
     }
     return Promise.all(jobs.map(function (j) { return j.catch(function () {}); }));
   }
   function fetchResults(key, role) {
-    return rpc("room_results", { p_code: S.code, p_activity: key, p_mode: "votes" }).then(function (r) {
+    var def = ACT[key] || {};
+    var pre = def.kind === "gallery" ? loadSheets(def.source) : Promise.resolve();
+    return pre.then(function () { return rpc("room_results", { p_code: S.code, p_activity: key, p_mode: def.resultMode || "votes" }); }).then(function (r) {
       var target = $(role === "projector" ? "resbody_" + key : "staffres_" + key);
       if (!target) return;
       clear(target);
       if (!r.ok) { target.appendChild(el("p", { class: "muted", text: r.reason === "hidden" ? "Not revealed yet." : "Could not load the result." })); return; }
-      target.appendChild(resultsNode(key, r.rows, role));
+      if (def.grid) target.appendChild(gridResultsNode(def, r.rows));
+      else if (def.kind === "gallery") target.appendChild(galleryResultsNode(def, r.rows));
+      else target.appendChild(resultsNode(key, r.rows, role));
     });
+  }
+  // the room screen: revealed sheets, all tables side by side or the one staff chose
+  function drawRoomSheets(key) {
+    var def = ACT[key];
+    return loadSheets(key).then(function (r) {
+      var target = $("resbody_" + key); if (!target || !r || !r.ok) return;
+      var only = setting("focus_sheet");
+      var list = (def.sheets || []).filter(function (sh) { return def.sheets.length === 1 || !only || only === sh; });
+      clear(target);
+      if (def.weighted) target.appendChild(weightedNode(list.map(function (sh) { return { sheet: sh, body: sheetBody(key, sh) }; })));
+      var grid = el("div", { class: "roomsheets" + (list.length > 1 ? " multi" : "") });
+      list.forEach(function (sh) { grid.appendChild(el("div", { class: "roomsheet" }, def.sheets.length > 1 ? el("h3", { text: SHEET_NAMES[sh] }) : null, sheetView(key, def, sh, false))); });
+      target.appendChild(grid);
+    });
+  }
+  function staffSpread(key, sheet) {
+    var def = ACT[key];
+    return rpc("room_results", { p_code: S.code, p_activity: def.spreadOf, p_mode: "spread" }).then(function (r) {
+      var box = $("sspread_" + key); if (!box || !r.ok) return;
+      var t = +sheet.slice(1);
+      clear(box); box.appendChild(spreadNode(r.rows.filter(function (x) { return x.table_no === t; }), SHEET_NAMES[sheet] + ": silent scores"));
+    }).catch(function () {});
   }
   function fetchWall() {
     return rpc("room_get_notes", { p_code: S.code, p_session: null, p_slide: null }).then(function (r) {
@@ -634,7 +1085,7 @@
   function renderStaff(force) {
     var view = $("view");
     if (S.tab !== "acts") { if (force) { clear(view); ({ notes: tabNotes, paper: tabPaper, settings: tabSettings })[S.tab](view); } return; }
-    var sig = ["acts", S.day, focusKey(), JSON.stringify(S.st.acts), JSON.stringify(S.st.settings), S.st.timer_end, JSON.stringify(S.showRes)].join("~");
+    var sig = ["acts", S.day, focusKey(), JSON.stringify(S.st.acts), JSON.stringify(S.st.settings), S.st.timer_end, JSON.stringify(S.showRes), S.openSheet].join("~");
     if (!force && sig === S.sig) return;
     S.sig = sig; clear(view);
     tabActs(view);
@@ -687,10 +1138,11 @@
   function actControl(key) {
     var def = ACT[key], st = actState(key), onScreen = focusKey() === key, box = el("div", { class: "arow" + (onScreen ? " onscreen" : "") });
     var row = el("div", { class: "row" }, el("span", { class: "actname", text: def.title }), el("span", { class: "state " + st, text: stateLabel(st) }), onScreen ? el("span", { class: "focusbadge", text: "On the room screen" }) : null,
-      el("span", { class: "counts", "data-count": key }));
+      (def.kind === "form" || def.kind === "gallery") ? el("span", { class: "counts", "data-count": key }) : null);
     box.appendChild(row);
     if (def.kind === "link") box.appendChild(el("div", { class: "muted small", text: evalUrl() ? "Phones show the evaluation link when this is open." : "Add the evaluation link on the Settings tab." }));
-    else if (def.kind === "sheet") box.appendChild(el("div", { class: "muted small", text: "Group sheet: not built yet. Open and close are saved so the sheet can use them later." }));
+    else if (def.kind === "sheet" && !def.staffOnly) box.appendChild(el("div", { class: "muted small", text: "Open lets the " + (def.clinic ? "clinic's" : "tables'") + " group devices fill the sheet. Reveal shows the sheets on the room screen and on phones." }));
+    else if (def.kind === "gallery") box.appendChild(el("div", { class: "muted small", text: "Reveal the D6 matrices first; phones then mark the indicators they support." }));
     var btns = el("div", { class: "row tight", style: "margin-top:8px" });
     function set(state, focus) { var p = { acts: {} }; p.acts[key] = state; if (focus) p.slide_id = key; staffSet(p); }
     btns.appendChild(el("button", { type: "button", class: "btn small" + (st === "open" ? "" : " ghost"), text: "Open", "aria-pressed": st === "open" ? "true" : "false", onclick: function () { set("open", true); } }));
@@ -698,14 +1150,39 @@
     btns.appendChild(el("button", { type: "button", class: "btn small" + (st === "revealed" ? "" : " ghost"), text: "Reveal on the room screen", "aria-pressed": st === "revealed" ? "true" : "false", onclick: function () { set("revealed", true); } }));
     btns.appendChild(el("button", { type: "button", class: "btn small ghost", text: "Reset", onclick: function () { set("none", false); } }));
     if (!onScreen) btns.appendChild(el("button", { type: "button", class: "btn small ghost", text: "Show on the room screen", onclick: function () { staffSet({ slide_id: key }); } }));
-    if (def.kind === "form") {
+    if (def.kind === "form" || def.kind === "gallery") {
       btns.appendChild(el("button", { type: "button", class: "btn ghost small", text: S.showRes[key] ? "Hide live result" : "Show live result", onclick: function () {
         if (S.showRes[key]) delete S.showRes[key]; else S.showRes[key] = true;
         S.sig = ""; renderStaff(true);
       } }));
     }
     box.appendChild(btns);
-    if (def.kind === "form" && S.showRes[key]) box.appendChild(el("div", { id: "staffres_" + key, style: "margin-top:10px" }, el("p", { class: "muted", text: "Loading..." })));
+    if (def.kind === "sheet") {
+      var srow = el("div", { class: "row tight", style: "margin-top:8px" }, el("span", { class: "muted small", text: def.staffOnly ? "Staff fill this in:" : "Open a sheet to read or fill in for a table:" }));
+      def.sheets.forEach(function (sh) {
+        var id = sheetKey(key, sh), on = S.openSheet === id;
+        srow.appendChild(el("button", { type: "button", class: "btn small" + (on ? "" : " ghost"), text: (on ? "Close " : "") + (sh === "ROOM" ? "the register" : SHEET_NAMES[sh]), onclick: function () {
+          S.openSheet = on ? null : id; S.sig = ""; renderStaff(true);
+        } }));
+      });
+      if (def.sheets.length > 1) {
+        var pick = el("select", { "aria-label": "What the room screen shows", style: "width:auto;min-height:38px;padding:4px 10px" },
+          [el("option", { value: "", text: "Room screen shows: all tables" })].concat(def.sheets.map(function (sh) { return el("option", { value: sh, selected: setting("focus_sheet") === sh, text: "Room screen shows: " + SHEET_NAMES[sh] }); })));
+        pick.addEventListener("change", function () { staffSet({ settings: { focus_sheet: pick.value } }); });
+        srow.appendChild(pick);
+      }
+      box.appendChild(srow);
+      if (S.openSheet && S.openSheet.split("|")[0] === key) {
+        var sh2 = S.openSheet.split("|")[1], ed = el("div", { class: "staffsheet" }, el("h4", { text: (sh2 === "ROOM" ? def.title : SHEET_NAMES[sh2]) + " · staff can edit at any time" }));
+        if (def.intro) ed.appendChild(el("p", { class: "help", text: def.intro }));
+        if (def.spreadOf) ed.appendChild(el("div", { id: "sspread_" + key }));
+        var hold = el("div"); hold.appendChild(editorFor(key, def, sh2, true)); ed.appendChild(hold);
+        box.appendChild(ed);
+        loadSheets(key).then(function () { if (!document.querySelector(".staffsheet").contains(document.activeElement)) redrawSheet(key, sh2); }).catch(function () {});
+        if (def.spreadOf) staffSpread(key, sh2);
+      }
+    }
+    if ((def.kind === "form" || def.kind === "gallery") && S.showRes[key]) box.appendChild(el("div", { id: "staffres_" + key, style: "margin-top:10px" }, el("p", { class: "muted", text: "Loading..." })));
     return box;
   }
 
@@ -787,6 +1264,17 @@
       staffSet({ settings: { poll_ms: +poll.value, eval_url: u } }).then(function () { msg(out, "Saved.", "ok"); });
     } }));
     c.appendChild(out);
+    c.appendChild(el("hr", { class: "hr" }));
+    var w = setting("d2_weights") || {}, wbox = el("div", { class: "tallygrid" }), wout = el("div");
+    AG.crit.forEach(function (cr) { wbox.appendChild(el("div", null, el("label", { for: "w_" + cr[0], text: cr[1] }), el("input", { type: "number", min: "0", step: "any", id: "w_" + cr[0], value: w[cr[0]] != null ? String(w[cr[0]]) : "", placeholder: "weight" }))); });
+    c.appendChild(el("div", { class: "q" }, el("span", { class: "t", text: "D2 weights carried from the pre-work (optional)" }),
+      el("p", { class: "help", text: "Enter the weight agreed in plenary for each question, in any unit (for example percentages). The page also always shows equal weights for comparison. Leave empty if not yet known." }), wbox));
+    c.appendChild(el("button", { type: "button", class: "btn ghost small", text: "Save the weights", onclick: function () {
+      var obj = {}, bad = false;
+      AG.crit.forEach(function (cr) { var v = $("w_" + cr[0]).value.trim(); if (v === "") return; var n = Number(v); if (!(n >= 0)) bad = true; obj[cr[0]] = n; });
+      if (bad) { msg(wout, "Please use numbers of zero or more.", "err"); return; }
+      staffSet({ settings: { d2_weights: obj } }).then(function () { msg(wout, "Saved.", "ok"); });
+    } }), wout);
     c.appendChild(el("hr", { class: "hr" }));
     var cc = el("div"), t = el("button", { type: "button", class: "btn ghost small", text: "Check the connection", onclick: function () {
       var t0 = performance.now(); msg(cc, "Checking...");

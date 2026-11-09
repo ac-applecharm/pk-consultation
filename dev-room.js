@@ -13,7 +13,7 @@
   };
   var GROUPS = ["Regional", "Local implementers", "National level", "Other"];
   var SHARED_KEYS = ["eval_url", "poll_ms"];
-  function room() { return { state: { version: 1, slide_id: null, acts: {}, settings: {}, timer_end: null }, members: {}, entries: [], notes: [] }; }
+  function room() { return { state: { version: 1, slide_id: null, acts: {}, settings: {}, timer_end: null }, members: {}, entries: [], notes: [], sheets: {} }; }
   function load() {
     try { var d = JSON.parse(localStorage.getItem(KEY)); if (d) return d; } catch (e) {}
     return { shared: { deck_version: null, settings: {} }, decks: {}, live: room(), trial: room() };
@@ -191,6 +191,47 @@
         if (p.body) n.body = p.body;
       });
       return { ok: true };
+    },
+    room_get_sheets: function (b, d) {
+      var a = who(b.p_code, ALL);
+      if (!a) return { ok: false, reason: "invalid" };
+      var R = d[a.stage]; R.sheets = R.sheets || {};
+      var st = R.state.acts[b.p_activity] || "none", mine = null;
+      if (a.role === "device") { var m = R.members[b.p_session]; if (!m) return { ok: false, reason: "not_joined" }; mine = m.sheet; }
+      var out = Object.keys(R.sheets).filter(function (k) { return k.split("|")[0] === b.p_activity; }).map(function (k) { return { sheet: k.split("|")[1], body: R.sheets[k].body, updated_at: R.sheets[k].at }; })
+        .filter(function (x) { return a.role === "staff" || st === "revealed" || (a.role === "device" && x.sheet === mine); })
+        .sort(function (p, q) { return p.sheet < q.sheet ? -1 : 1; });
+      return { ok: true, state: st, mine: mine, sheets: out };
+    },
+    room_save_sheet: function (b, d) {
+      var a = who(b.p_code, ["staff", "device"]);
+      if (!a) return { ok: false, reason: "invalid" };
+      if (["T1", "T2", "T3", "T4", "C1", "C2", "C3", "ROOM"].indexOf(b.p_sheet) < 0) return { ok: false, reason: "bad_sheet" };
+      var R = d[a.stage]; R.sheets = R.sheets || {};
+      var whoLabel = "Staff";
+      if (a.role === "device") {
+        var m = R.members[b.p_session];
+        if (!m) return { ok: false, reason: "not_joined" };
+        if (m.sheet !== b.p_sheet) return { ok: false, reason: "not_your_sheet" };
+        if (R.state.acts[b.p_activity] !== "open") return { ok: false, reason: "not_open" };
+        whoLabel = (b.p_sheet.charAt(0) === "C" ? "Clinic " : "Table ") + b.p_sheet.slice(1);
+      }
+      var k = b.p_activity + "|" + b.p_sheet, cur = R.sheets[k] || { body: {} };
+      Object.keys(b.p_patch || {}).forEach(function (x) { cur.body[x] = b.p_patch[x]; });
+      cur.at = new Date().toISOString(); cur.by = whoLabel; R.sheets[k] = cur;
+      return { ok: true };
+    },
+    room_table_spread: function (b, d) {
+      var a = who(b.p_code, ["device"]);
+      if (!a) return { ok: false, reason: "invalid" };
+      var R = d[a.stage], m = R.members[b.p_session];
+      if (!m || !m.sheet || m.sheet.charAt(0) !== "T") return { ok: false, reason: "not_a_table" };
+      var t = +m.sheet.slice(1), agg = {};
+      R.entries.forEach(function (e) {
+        if (e.kind !== "person" || e.activity !== b.p_activity || e.table_no !== t || !e.payload || e.payload.v == null) return;
+        var key = e.item + "|" + e.payload.v; agg[key] = (agg[key] || 0) + 1;
+      });
+      return { ok: true, table_no: t, rows: Object.keys(agg).map(function (k) { return { item: k.split("|")[0], val: k.split("|")[1], n: agg[k] }; }) };
     },
     room_reset_trial: function (b, d) {
       var a = who(b.p_code, ["staff"]);

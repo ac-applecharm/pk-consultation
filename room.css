@@ -175,3 +175,53 @@ body.proj .popt { font-size: 32px; padding: 8px 22px; border-radius: 14px; }
 body.proj .plegend { font-size: 26px; }
 body.proj .pstate .counts { font-size: 38px; font-weight: 600; }
 body.proj .pstate .state { font-size: 22px; padding: 6px 18px; }
+
+/* ---- group sheets: each row is a card of labeled fields, so they read well on a tablet or phone ---- */
+.sheet { margin-top: 6px; }
+.ssec { margin: 0 0 18px; }
+.ssec > h4 { margin: 0 0 8px; font-size: 16px; font-family: var(--serif); }
+.srow { background: var(--soft); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin: 0 0 10px; }
+.srowh { display: flex; align-items: center; gap: 10px; margin: 0 0 6px; font-size: 14px; }
+.srowh .linkbtn { margin-left: auto; }
+.sgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px 12px; }
+.sfield { display: block; margin: 0 0 6px; }
+.sfield.check { display: flex; flex-direction: column; }
+.slab { display: block; font-size: 13px; font-weight: 600; color: var(--muted); margin: 0 0 3px; line-height: 1.3; }
+.sheet textarea { min-height: 44px; padding: 8px 10px; font-size: 16px; border-radius: 10px; }
+.sheet select { min-height: 42px; padding: 6px 10px; font-size: 16px; border-radius: 10px; }
+.cellro { min-height: 24px; white-space: pre-wrap; font-size: 16px; line-height: 1.45; }
+.regmin { font-size: 14px; color: var(--ink); margin-top: 4px; }
+.mline { display: grid; grid-template-columns: 26px 86px 1fr; gap: 8px; align-items: start; margin: 0 0 6px; }
+.mopt { font-weight: 700; padding-top: 10px; }
+.mreason textarea { min-height: 42px; }
+.sidebar { background: var(--kick-bg); color: var(--kick-ink); border-radius: 10px; padding: 8px 12px; font-weight: 700; margin: 0 0 12px; }
+.sidebar.against { background: var(--grey-bg); color: var(--grey-ink); }
+.linkbtn { font: inherit; font-size: 13px; background: none; border: 0; color: var(--accent); text-decoration: underline; cursor: pointer; padding: 4px; }
+details.prompts { margin: 8px 0 0; }
+.staffsheet { margin-top: 12px; padding: 14px 16px; border: 1px dashed var(--accent); border-radius: 14px; background: var(--card); }
+.staffsheet h4 { margin: 0 0 6px; }
+.restable td.flag { background: var(--warn-bg); color: var(--warn-ink); font-weight: 700; }
+.restable tr.total td { font-weight: 700; background: var(--soft); }
+.restable.spread td.n { text-align: center; }
+/* D2 silent scores on phones */
+.gq .t { margin-bottom: 6px; }
+.gline { display: grid; grid-template-columns: 22px 1fr; gap: 8px; align-items: center; margin: 0 0 6px; }
+.gline .saved-mark { grid-column: 2; margin: -2px 0 0; }
+.apanel .gscale label { padding: 8px 0; min-height: 42px; font-size: 18px; }
+/* gallery walk */
+.glevel { font-size: 13px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 12px 0 6px; }
+.gres { padding: 6px 0; border-bottom: 1px solid var(--line); }
+.gres b { display: inline-block; min-width: 28px; }
+.gres.opp { color: var(--warn-ink); }
+/* table guide on group devices */
+details.guide summary { font-weight: 600; cursor: pointer; }
+details.guide p { margin: 2px 0 10px; font-size: 15px; }
+/* the room screen: sheets side by side */
+.roomsheets.multi { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 16px; }
+.roomsheet h3 { margin: 0 0 8px; font-size: 22px; }
+body.proj .srow { background: var(--soft); }
+body.proj .cellro { font-size: 20px; }
+body.proj .slab { font-size: 15px; }
+body.proj .ssec > h4 { font-size: 22px; }
+body.proj .regmin { font-size: 18px; }
+@media (max-width: 520px) { .mline { grid-template-columns: 22px 74px 1fr; } }
