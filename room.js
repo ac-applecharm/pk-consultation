@@ -49,7 +49,7 @@
     code: null, role: null, session: null, profile: {}, st: null, ver: null, skew: 0, joined: null, counts: {},
     slides: [], byId: {}, deckVer: undefined, deckMsg: "", tab: "run", follow: true, localId: null, browse: false, browseId: null,
     mine: {}, queue: [], marks: {}, pollTimer: null, fails: 0, sig: "", showRes: {}, res: {}, wall: [], notesMine: [], menuOpen: false,
-    upload: null, preview: null, versions: null, tallyPick: 0, running: false
+    upload: null, preview: null, versions: null, tallyPick: 0, running: false, stage: "live"
   };
 
   // ---------- helpers ----------
@@ -86,7 +86,19 @@
   function rpc(name, body) {
     if (MOCK && window.PK_ROOM_MOCK) return window.PK_ROOM_MOCK.rpc(name, body);
     return fetch(API + "/rest/v1/rpc/" + name, { method: "POST", headers: { apikey: KEY, "Content-Type": "application/json" }, body: JSON.stringify(body) })
-      .then(function (r) { if (!r.ok) throw new Error("http " + r.status); return r.json(); });
+      .then(function (r) {
+        if (r.ok) return r.json();
+        return r.text().then(function (t) {
+          var detail = ""; try { var j = JSON.parse(t); detail = j.message || j.hint || ""; } catch (e) { detail = String(t || "").slice(0, 120); }
+          var err = new Error("http " + r.status); err.http = r.status; err.detail = detail; throw err;
+        });
+      });
+  }
+  // A short, honest reason for a failed request. Only a real network failure says "No connection".
+  function errText(e) {
+    if (e && e.http) return "The server refused it (" + e.http + (e.detail ? ": " + e.detail : "") + "). Tell the PK team.";
+    if (e instanceof TypeError) return "No connection.";
+    return "Something went wrong on this page: " + (e && e.message ? e.message : "unknown") + ".";
   }
   function toast(text) {
     var t = $("toast"); t.textContent = text; t.hidden = false; clearTimeout(toast.t);
@@ -102,6 +114,19 @@
   function evalUrl() { var u = setting("eval_url"); return typeof u === "string" && /^https:\/\/[^\s]+$/i.test(u) ? u : ""; }
   function isStaff() { return S.role === "staff"; }
   function isProj() { return S.role === "projector"; }
+  // The trial room looks different on every screen, so nobody mistakes it for the live room.
+  function applyStage(stage) {
+    if (stage !== "trial" && stage !== "live") return;
+    S.stage = stage;
+    var bar = $("trialBar"), trial = stage === "trial";
+    bar.hidden = !trial;
+    bar.textContent = trial ? (isProj() ? "TRIAL ROOM: not the live consultation" : "TRIAL ROOM: answers here are not counted. The slides and two settings are shared with the live room.") : "";
+    document.body.classList.toggle("trial", trial);
+    document.title = (trial ? "TRIAL · " : "") + "PK Direction Consultation: Room";
+    sizeRibbon();
+  }
+  function sizeRibbon() { var bar = $("trialBar"); document.documentElement.style.setProperty("--ribbon-h", (bar.hidden ? 0 : bar.offsetHeight) + "px"); }
+  window.addEventListener("resize", function () { if (typeof sizeRibbon === "function") sizeRibbon(); });
 
   // ---------- slide drawing ----------
   function runsNode(runs) {
@@ -206,7 +231,7 @@
     rpc("room_get_state", { p_code: code, p_session: null, p_since: null }).then(function (r) {
       if (!r.ok) { msg(out, "That code was not recognized, or it is not open yet. Check it and try again.", "err"); return; }
       msg(out, "");
-      S.code = code; S.role = r.role;
+      S.code = code; S.role = r.role; applyStage(r.stage);
       var p = lsGet(profileKey(code)) || {};
       S.session = p.session || uuid(); S.profile = p;
       if (r.role === "participant") profileForm(p, function (prof) { startJoin(prof); });
@@ -274,7 +299,7 @@
     S.code = cur; S.session = p.session; S.profile = p;
     rpc("room_get_state", { p_code: cur, p_session: null, p_since: null }).then(function (r) {
       if (!r.ok) { ssSet("pk_room_cur", null); return; }
-      S.role = r.role;
+      S.role = r.role; applyStage(r.stage);
       joinCall(p).then(function (j) { if (j.ok) startApp(); });
     }).catch(function () {});
   }
@@ -323,7 +348,7 @@
       if (r.counts !== undefined && r.counts !== null) S.counts = r.counts;
       if (r.joined !== undefined && r.joined !== null) S.joined = r.joined;
       if (r.unchanged) { updateLive(); return refreshLive(); }
-      S.ver = r.version; S.st = r;
+      S.ver = r.version; S.st = r; applyStage(r.stage);
       S.skew = Date.parse(r.now) - Date.now();
       var loadDeckFirst = r.deck_version !== S.deckVer ? loadDeck(r.deck_version) : Promise.resolve();
       return loadDeckFirst.then(function () { render(); updateLive(); return refreshLive(); });
@@ -683,7 +708,7 @@
     return rpc("room_set_state", { p_code: S.code, p_patch: patch }).then(function (r) {
       if (!r.ok) { toast("That was not accepted. Is the staff code still open?"); return r; }
       return pollNow().then(function () { return r; });
-    }).catch(function () { toast("No connection. Try again."); });
+    }).catch(function (e) { toast(errText(e)); });
   }
   function renderStaff(force) {
     var view = $("view");
@@ -784,7 +809,8 @@
   // ----- deck tab -----
   function tabDeck(view) {
     var live = el("div", { class: "ctl" }, el("h3", { text: "Slides" }),
-      el("p", { class: "muted", style: "margin-top:0", text: "Live deck version: " + (S.st.deck_version || "none yet") + (S.slides.length ? " · " + S.slides.length + " slides for staff" : "") }));
+      el("p", { class: "muted", style: "margin-top:0", text: "Live deck version: " + (S.st.deck_version || "none yet") + (S.slides.length ? " · " + S.slides.length + " slides for staff" : "") }),
+      el("p", { class: "muted small", style: "margin-top:-6px", text: "The slide deck is shared by the live room and the trial room. Making a version live changes both." }));
     var file = el("input", { type: "file", accept: ".pptx", id: "pptxFile", "aria-label": "Choose a PowerPoint file" }), out = el("div");
     file.addEventListener("change", function () {
       var f = file.files[0]; if (!f) return;
@@ -820,8 +846,8 @@
   function makeLive(v) {
     return rpc("room_set_deck_live", { p_code: S.code, p_version: v }).then(function (r) {
       if (r.ok) { toast("Version " + v + " is live."); S.sig = ""; return pollNow().then(function () { renderStaff(true); }); }
-      toast("Could not make it live.");
-    }).catch(function () { toast("No connection."); });
+      toast("Could not make it live" + (r.reason ? " (" + r.reason + ")" : "") + ".");
+    }).catch(function (e) { toast(errText(e)); });
   }
   function uploadCard() {
     var u = S.upload, res = u.res, box = el("div", { class: "ctl" }, el("h3", { text: "Checking " + u.name }));
@@ -847,7 +873,7 @@
         if (!r.ok) { save.disabled = false; msg(out, r.reason === "too_large" ? "The deck is too large." : "It was not saved (" + (r.reason || "unknown") + ").", "err"); return; }
         var after = liveBox.checked ? makeLive(v) : Promise.resolve();
         return after.then(function () { toast("Saved."); S.upload = null; S.sig = ""; renderStaff(true); });
-      }).catch(function () { save.disabled = false; msg(out, "No connection. Nothing was saved.", "err"); });
+      }).catch(function (e) { save.disabled = false; msg(out, errText(e) + " The version may not be saved.", "err"); });
     } });
     box.appendChild(el("div", { class: "row" }, save, el("button", { type: "button", class: "btn ghost", text: "Cancel", onclick: function () { S.upload = null; renderStaff(true); } })));
     box.appendChild(out);
@@ -945,7 +971,7 @@
       .map(function (o) { return el("option", { value: String(o[0]), selected: pollMs() === o[0], text: o[1] }); }));
     var url = el("input", { type: "text", value: evalUrl(), placeholder: "https://...", "aria-label": "Evaluation link" });
     c.appendChild(el("div", { class: "q" }, el("span", { class: "t", text: "How often devices check for changes" }), el("p", { class: "help", text: "Slower saves data on the free plan. Use 8 seconds or more if the usage page shows a high count." }), poll));
-    c.appendChild(el("div", { class: "q" }, el("span", { class: "t", text: "Evaluation link (optional)" }), el("p", { class: "help", text: "The link your team provides. Phones show an Open button on the evaluation slide." }), url));
+    c.appendChild(el("div", { class: "q" }, el("span", { class: "t", text: "Evaluation link (optional)" }), el("p", { class: "help", text: "The link your team provides. Phones show an Open button on the evaluation slide. This link and the polling speed are shared with the " + (S.stage === "trial" ? "live" : "trial") + " room." }), url));
     c.appendChild(el("button", { type: "button", class: "btn", text: "Save settings", onclick: function () {
       var u = url.value.trim();
       if (u && !/^https:\/\/[^\s]+$/i.test(u)) { msg(out, "The evaluation link must start with https://", "err"); return; }
@@ -960,6 +986,17 @@
     } });
     c.appendChild(t); c.appendChild(cc);
     view.appendChild(c);
+    if (S.stage === "trial") {
+      var tr = el("div", { class: "ctl" }, el("h3", { text: "Trial room" })), tout = el("div");
+      tr.appendChild(el("p", { class: "muted", style: "margin-top:0", text: "Clears every trial answer, note and participant and puts the trial back at the start. The slides, the evaluation link and the live room are not touched." }));
+      tr.appendChild(el("button", { type: "button", class: "btn warn small", text: "Reset the trial room", onclick: function () {
+        if (!confirm("Clear all trial answers, notes and participants? The live room is not affected.")) return;
+        rpc("room_reset_trial", { p_code: S.code }).then(function (r) {
+          if (r.ok) { msg(tout, "The trial room is empty again.", "ok"); S.showRes = {}; pollNow(); } else msg(tout, "That was not accepted.", "err");
+        }).catch(function (e) { msg(tout, errText(e), "err"); });
+      } }));
+      tr.appendChild(tout); view.appendChild(tr);
+    }
   }
 
   // ---------- menu ----------
