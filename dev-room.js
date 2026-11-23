@@ -2,14 +2,16 @@
 /* Local test backend for the room page. It is used only on localhost with ?mock=1.
    It copies what the database functions in 09_room.sql and 12_room_trial.sql do, and keeps its data in this browser's
    localStorage, so a staff tab, a projector tab and a participant tab on the same computer can see each other.
-   Codes: MOCK-STAFF, MOCK-PROJ, MOCK-PART, MOCK-DEV (live room) and TRIAL-STAFF, TRIAL-PROJ, TRIAL-PART, TRIAL-DEV (trial room).
-   The live and trial rooms keep their own slide, timer, open activities, members, answers and notes.
+   Codes: MOCK-STAFF, MOCK-PROJ, MOCK-PART (live room) and TRIAL-STAFF, TRIAL-PROJ, TRIAL-PART (trial room).
+   The group-device codes are switched off (15_room_one_code.sql): phones fill their table's sheet themselves.
+   The live and trial rooms keep their own slide, timer, open activities, members, answers and sheets.
+   Sticky notes are no longer used by the page; their functions stay here only because the database still has them.
    The deck and two settings (evaluation link, polling speed) are shared. It contains no consultation content. */
 (function () {
   var KEY = "pk_room_mock2";
   var CODES = {
-    "MOCK-STAFF": ["staff", "live"], "MOCK-PROJ": ["projector", "live"], "MOCK-PART": ["participant", "live"], "MOCK-DEV": ["device", "live"],
-    "TRIAL-STAFF": ["staff", "trial"], "TRIAL-PROJ": ["projector", "trial"], "TRIAL-PART": ["participant", "trial"], "TRIAL-DEV": ["device", "trial"]
+    "MOCK-STAFF": ["staff", "live"], "MOCK-PROJ": ["projector", "live"], "MOCK-PART": ["participant", "live"],
+    "TRIAL-STAFF": ["staff", "trial"], "TRIAL-PROJ": ["projector", "trial"], "TRIAL-PART": ["participant", "trial"]
   };
   var GROUPS = ["Regional", "Local implementers", "National level", "Other"];
   var SHARED_KEYS = ["eval_url", "poll_ms"];
@@ -25,13 +27,23 @@
   }
   var ALL = ["staff", "projector", "participant", "device"];
   function bump(R) { R.state.version += 1; }
+  // people who answered an activity (not answers), plus paper tallies (the largest item total), as in 16_room_answers.sql
   function counts(R) {
-    var c = {};
+    var people = {}, tally = {}, c = {};
     R.entries.forEach(function (e) {
-      if (e.kind === "person") c[e.activity] = (c[e.activity] || 0) + 1;
-      else Object.keys(e.payload.counts || {}).forEach(function (k) { c[e.activity] = (c[e.activity] || 0) + (+e.payload.counts[k] || 0); });
+      if (e.kind === "person") { (people[e.activity] = people[e.activity] || {})[e.session] = true; return; }
+      var t = tally[e.activity] = tally[e.activity] || {}, n = 0;
+      Object.keys(e.payload.counts || {}).forEach(function (k) { n += +e.payload.counts[k] || 0; });
+      t[e.item] = (t[e.item] || 0) + n;
     });
+    Object.keys(people).forEach(function (a) { c[a] = Object.keys(people[a]).length; });
+    Object.keys(tally).forEach(function (a) { var m = 0; Object.keys(tally[a]).forEach(function (i) { if (tally[a][i] > m) m = tally[a][i]; }); c[a] = (c[a] || 0) + m; });
     return c;
+  }
+  // the room screen sees an activity's answers once staff show the results, or while it is open if it is a live slide
+  function shownToRoom(R, act) {
+    var st = R.state.acts[act], live = R.state.settings.live_acts;
+    return st === "revealed" || (st === "open" && Array.isArray(live) && live.indexOf(act) >= 0);
   }
   var F = {
     room_join: function (b, d) {
@@ -138,7 +150,7 @@
       var a = who(b.p_code, ["staff", "projector"]);
       if (!a) return { ok: false, reason: "invalid" };
       var R = d[a.stage];
-      if (a.role === "projector" && R.state.acts[b.p_activity] !== "revealed") return { ok: false, reason: "hidden" };
+      if (a.role === "projector" && !shownToRoom(R, b.p_activity)) return { ok: false, reason: "hidden" };
       var mode = b.p_mode || "votes", agg = {};
       R.entries.filter(function (e) { return e.activity === b.p_activity; }).forEach(function (e) {
         var vals = [];
@@ -157,6 +169,16 @@
         return { item: x.item, val: x.val, grp: x.grp, table_no: x.table_no, n: hide ? null : x.n, small: hide };
       }).sort(function (p, q) { return (p.item + p.val) < (q.item + q.val) ? -1 : 1; });
       return { ok: true, mode: mode, rows: rows };
+    },
+    // written answers and whole answers (Session 4), without who gave them (16_room_answers.sql)
+    room_answers: function (b, d) {
+      var a = who(b.p_code, ["staff", "projector"]);
+      if (!a) return { ok: false, reason: "invalid" };
+      var R = d[a.stage];
+      if (a.role === "projector" && !shownToRoom(R, b.p_activity)) return { ok: false, reason: "hidden" };
+      return { ok: true, answers: R.entries.filter(function (e) { return e.kind === "person" && e.activity === b.p_activity; })
+        .map(function (e) { return { item: e.item, payload: e.payload }; })
+        .sort(function (p, q) { return p.item < q.item ? -1 : p.item > q.item ? 1 : (JSON.stringify(p.payload) < JSON.stringify(q.payload) ? -1 : 1); }) };
     },
     room_add_note: function (b, d) {
       var a = who(b.p_code, ["participant", "device", "staff"]);
@@ -197,36 +219,50 @@
       if (!a) return { ok: false, reason: "invalid" };
       var R = d[a.stage]; R.sheets = R.sheets || {};
       var st = R.state.acts[b.p_activity] || "none", mine = null;
-      if (a.role === "device") { var m = R.members[b.p_session]; if (!m) return { ok: false, reason: "not_joined" }; mine = m.sheet; }
+      if (a.role === "device" || a.role === "participant") {
+        var m = R.members[b.p_session]; if (!m) return { ok: false, reason: "not_joined" };
+        mine = a.role === "device" ? m.sheet : "T" + m.table_no;
+      }
       var out = Object.keys(R.sheets).filter(function (k) { return k.split("|")[0] === b.p_activity; }).map(function (k) { return { sheet: k.split("|")[1], body: R.sheets[k].body, updated_at: R.sheets[k].at }; })
-        .filter(function (x) { return a.role === "staff" || st === "revealed" || (a.role === "device" && x.sheet === mine); })
+        .filter(function (x) { return a.role === "staff" || st === "revealed" || x.sheet === mine || (a.role === "participant" && x.sheet.charAt(0) === "C"); })
         .sort(function (p, q) { return p.sheet < q.sheet ? -1 : 1; });
       return { ok: true, state: st, mine: mine, sheets: out };
     },
     room_save_sheet: function (b, d) {
-      var a = who(b.p_code, ["staff", "device"]);
+      var a = who(b.p_code, ["staff", "device", "participant"]);
       if (!a) return { ok: false, reason: "invalid" };
       if (["T1", "T2", "T3", "T4", "C1", "C2", "C3", "ROOM"].indexOf(b.p_sheet) < 0) return { ok: false, reason: "bad_sheet" };
       var R = d[a.stage]; R.sheets = R.sheets || {};
       var whoLabel = "Staff";
-      if (a.role === "device") {
+      if (a.role !== "staff") {
         var m = R.members[b.p_session];
         if (!m) return { ok: false, reason: "not_joined" };
-        if (m.sheet !== b.p_sheet) return { ok: false, reason: "not_your_sheet" };
+        var okSheet = a.role === "participant" ? (b.p_sheet === "T" + m.table_no || /^C[123]$/.test(b.p_sheet)) : m.sheet === b.p_sheet;
+        if (!okSheet) return { ok: false, reason: "not_your_sheet" };
         if (R.state.acts[b.p_activity] !== "open") return { ok: false, reason: "not_open" };
         whoLabel = (b.p_sheet.charAt(0) === "C" ? "Clinic " : "Table ") + b.p_sheet.slice(1);
       }
       var k = b.p_activity + "|" + b.p_sheet, cur = R.sheets[k] || { body: {} };
-      Object.keys(b.p_patch || {}).forEach(function (x) { cur.body[x] = b.p_patch[x]; });
+      Object.keys(b.p_patch || {}).forEach(function (x) {
+        var end = x.slice(-5), v = b.p_patch[x];
+        if (end === "._add" || end === "._del") {
+          var sec = x.slice(0, -5) + "._rows", lst = Array.isArray(cur.body[sec]) ? cur.body[sec].slice() : [];
+          [].concat(v).forEach(function (one) {
+            if (end === "._add") { if (lst.indexOf(one) < 0) lst.push(one); } else lst = lst.filter(function (y) { return y !== one; });
+          });
+          cur.body[sec] = lst;
+        } else cur.body[x] = v;
+      });
       cur.at = new Date().toISOString(); cur.by = whoLabel; R.sheets[k] = cur;
       return { ok: true };
     },
     room_table_spread: function (b, d) {
-      var a = who(b.p_code, ["device"]);
+      var a = who(b.p_code, ["device", "participant"]);
       if (!a) return { ok: false, reason: "invalid" };
       var R = d[a.stage], m = R.members[b.p_session];
-      if (!m || !m.sheet || m.sheet.charAt(0) !== "T") return { ok: false, reason: "not_a_table" };
-      var t = +m.sheet.slice(1), agg = {};
+      if (!m) return { ok: false, reason: "not_joined" };
+      var t = a.role === "participant" ? m.table_no : (m.sheet && m.sheet.charAt(0) === "T" ? +m.sheet.slice(1) : null), agg = {};
+      if (!t) return { ok: false, reason: "not_a_table" };
       R.entries.forEach(function (e) {
         if (e.kind !== "person" || e.activity !== b.p_activity || e.table_no !== t || !e.payload || e.payload.v == null) return;
         var key = e.item + "|" + e.payload.v; agg[key] = (agg[key] || 0) + 1;
@@ -246,11 +282,11 @@
       return new Promise(function (resolve, reject) {
         setTimeout(function () {
           if (localStorage.getItem("pk_room_mock_offline") === "1") { reject(new TypeError("offline")); return; }
-          var d = load(), fn = F[name];
+          var fn = F[name];
           if (!fn) { var e = new Error("http 404"); e.http = 404; reject(e); return; }
-          var res = fn(body || {}, d);
-          save(d);
-          resolve(JSON.parse(JSON.stringify(res)));
+          // one tab at a time, like a database transaction, so tabs do not overwrite each other's changes
+          var run = function () { var d = load(), res = fn(body || {}, d); save(d); resolve(JSON.parse(JSON.stringify(res))); };
+          if (navigator.locks && navigator.locks.request) navigator.locks.request(KEY, function () { run(); }); else run();
         }, 30);
       });
     },

@@ -1,18 +1,18 @@
 "use strict";
-/* The fixed activity list for the two days (Day 1 and Day 2, 25-26 November 2026).
-   The PowerPoint is presented separately; this page only runs the activities.
-   Built from the facilitation deck v20261109B (tagged activity slides and their session footers) and the
-   Materials v20261106B (D2, D4 to D7, D9 to D12).
-   kind "form": answered on each person's phone.
-   kind "sheet": one sheet per table (T1-T4), per clinic (C1-C3) or one staff register (ROOM), filled on a group device or by staff.
-   kind "gallery": phones mark the indicators they support, from the revealed D6 matrices.
+/* The fixed activity list and the slide order for the two days (25-26 November 2026).
+   The PowerPoint is presented separately; this page only runs the activities, one slide at a time:
+   whatever slide the staff screen shows is the slide the phones answer.
+   Arranged to match the participant report v20261120D (Sessions 0 to 8), as redesigned on 23-24 November.
+   kind "form": answered on each person's phone, on their own.
+   kind "sheet": one sheet per table (T1-T4), per clinic (C1-C3), or one staff sheet (ROOM).
+     A sheet with "view" is drawn by its own code in room.js (the starting elements, the table's choice, the test,
+     the two merge grids, the indicator sheets).
    kind "link": opens an outside link.
-   To change the program, edit PROGRAM below (order, session names, times) or an entry in ACTIVITIES. */
+   The words of the Session 2 starting elements and of the pre-work indicator list are NOT here: they are
+   consultation content, kept in a private note and entered by staff into the staff sheets before the session. */
 window.PK_AGENDA = (function () {
-  var ABCD = [["A", "A"], ["B", "B"], ["C", "C"], ["D", "D"]];
-  var OPTS = ["A", "B", "C", "D"];
   var TABLES = ["T1", "T2", "T3", "T4"];
-  // the eight comparison questions of D2 (weights are agreed in plenary and entered on the Settings tab)
+  // the eight questions (Session 1 weights; Session 2 test)
   var CRIT = [
     ["equity", "Patas: equity"], ["speed", "Mabilis: speed to results"], ["account", "Mapagkakatiwalaan: accountability"],
     ["devolution", "Feasibility under devolution"], ["workforce", "Workforce sustainability"], ["financing", "Financing sustainability"],
@@ -28,15 +28,68 @@ window.PK_AGENDA = (function () {
     ["R11", "Davao Region (Region XI)", 5389422], ["R12", "SOCCSKSARGEN (Region XII)", 4462776], ["R13", "CARAGA (Region XIII)", 2865196],
     ["NCR", "National Capital Region", 14001751], ["CAR", "Cordillera Administrative Region", 1808985], ["BARMM", "BARMM", 5691583]
   ];
-  var GROUP_OPTS = ["Regional", "Local implementers", "National level", "Other"];
+  // D10 routes; "oth" opens "specify other" when above 0%
+  var ROUTES = [["fac", "Facilities"], ["agn", "Other agencies"], ["com", "Community-based work"], ["oth", "Others"]];
+  var LEVELS = ["National", "Regional", "Province or city", "Municipality", "Barangay"];
+
+  // Session 6 guide questions: generic, so they work whichever option or mix becomes the direction.
+  // Each topic is a section; each question is one row (answer: how, still to decide, who will implement).
+  function clinic(id, sheet, title, topics) {
+    var secs = topics.map(function (t, i) {
+      return { id: "t" + (i + 1), title: t[0], type: "rows", fixedRows: t[1].map(function (q, j) { return ["q" + (j + 1), q]; }), labelCol: "Guide question", cols: CLINIC_COLS };
+    });
+    secs.push({ id: "add", title: "Anything else the policy needs", type: "rows", add: "Add a row", cols: [{ id: "topic", label: "What it is about" }].concat(CLINIC_COLS) });
+    return { title: title, kind: "sheet", sheets: [sheet], clinic: true, showDirection: true,
+      intro: "Under the direction agreed in Session 2, say how the new PK will work for your topic. Each answer becomes part of the new PK policy.", sections: secs };
+  }
+  var CLINIC_COLS = [
+    { id: "how", label: "How the new PK will do this" },
+    { id: "decide", label: "What still has to be decided" },
+    { id: "who", label: "Who will implement" }];
+
+  var IND_INTRO = "For each component the plenary agreed in Session 6, write a specific indicator: what would show it is working, where it is measured, the data source, and who uses it to decide what. Include only indicators you consider feasible.";
 
   var ACTIVITIES = {
     // ---------- Day 1 ----------
-    accept_contest: { title: "Accept or contest: Where PK stands", kind: "form", items: [
-      { id: "answer", label: "Do you accept this result, or do you contest it?", type: "single", options: [["accept", "Accept"], ["contest", "Contest"]] }] },
+    s0_clarify: { title: "Your clarifying question about the results", kind: "form", texts: true, items: [
+      { id: "q", label: "What would you like clarified about the pre-work results?", type: "text" }] },
+    s0_question: { title: "Is there a result you would question?", kind: "form", texts: true, items: [
+      { id: "answer", label: "Do you accept the results as they are, or is there one you would question?", type: "single", options: [["accept", "I accept them"], ["question", "I would question a result"]] },
+      { id: "which", label: "Which result?", type: "text", showIf: { item: "answer", value: "question" } },
+      { id: "why", label: "Why?", type: "text", showIf: { item: "answer", value: "question" } }] },
 
-    d9_models: { title: "D9 models matrix and core or adaptable elements", kind: "sheet", sheets: TABLES,
-      intro: "Correct and add models (Part A). Then confirm or move each element between core and adaptable (Part B). Unsettled elements go to the design-questions register; do not force agreement.",
+    s1_weights: { title: "The weights from the pre-work ranking", kind: "form", texts: true, items: [
+      { id: "answer", label: "Do you accept the weights for the eight questions from the pre-work ranking?", type: "single", options: [["accept", "Accept"], ["contest", "Contest"]] },
+      { id: "why", label: "Why do you contest them?", type: "text", showIf: { item: "answer", value: "contest" } }] },
+    s1_vote: { title: "Vote: which weights?", kind: "form", items: [
+      { id: "weights", label: "Which weights should the room use?", type: "single", options: [["prework", "The weights from the pre-work ranking"], ["equal", "Equal weights"]] }] },
+
+    s2_start: { title: "The starting elements", kind: "sheet", sheets: ["ROOM"], staffOnly: true, view: "start", importable: true,
+      intro: "From the pre-work: what people would take from each option (80 people who chose a mix, 183 answers). Each row is one idea. Staff enter or paste these before the session.",
+      sections: [
+        { id: "e", title: "Elements (one idea each)", type: "rows", add: "Add an element", cols: [
+          { id: "theme", label: "Theme and pre-work basis" }, { id: "phrase", label: "Connecting phrase" }, { id: "element", label: "Element" }] },
+        { id: "s", title: "Stakeholders", type: "rows", add: "Add a stakeholder", cols: [{ id: "name", label: "Stakeholder" }] },
+        { id: "r", title: "Role options (the same for every stakeholder)", type: "rows", add: "Add a role", cols: [{ id: "role", label: "Role" }] },
+        { id: "m", title: "Stakeholder section heading", type: "fields", fields: [
+          { id: "theme", label: "Theme and pre-work basis for the stakeholder roles" }] }] },
+    s2_choose: { title: "Choose your table's elements", kind: "sheet", sheets: TABLES, view: "choose",
+      intro: "Tick every element your table wants in the new PK. Add your own under any sentence. Your table's direction is written below as you tick." },
+    s2_test: { title: "Test your direction on the eight questions", kind: "sheet", sheets: TABLES, view: "test",
+      intro: "Score your table's direction from 1 to 5 on each question, where 5 is strongest, with a one-line reason." },
+    s2_merge: { title: "The one direction (merge)", kind: "sheet", sheets: ["ROOM"], staffOnly: true, view: "merge2",
+      intro: "What each table chose, element by element. Staff type the final agreed element in the last column; the one direction is written below." },
+    s2_agree: { title: "Agreement check", kind: "form", texts: true, items: [
+      { id: "level", label: "How far do you agree with the one direction?", type: "scale", options: [["1", "Cannot agree"], ["2", "Strong doubts"], ["3", "Can live with it"], ["4", "Agree"], ["5", "Fully agree"]] },
+      { id: "why", label: "What would make it work for you?", type: "text", showIf: { item: "level", values: ["1", "2"] } }] },
+
+    s3_carry: { title: "What can be carried over", kind: "form", texts: true, items: [
+      { id: "text", label: "Which elements of PK can be carried over to the new direction, and why?", type: "text" }] },
+    s3_settled: { title: "Elements the pre-work already settles", kind: "form", texts: true, items: [
+      { id: "answer", label: "Do you confirm the elements the pre-work already settles?", type: "single", options: [["confirm", "Confirm"], ["contest", "Contest one or more"]] },
+      { id: "which", label: "Which, and why?", type: "text", showIf: { item: "answer", value: "contest" } }] },
+    d9_models: { title: "Models, and core or adaptable elements (D9)", kind: "sheet", sheets: TABLES,
+      intro: "Correct and add models (Part A). Then confirm or move each element between core and adaptable (Part B). Elements you cannot classify go to the design-questions register; do not force agreement.",
       sections: [
         { id: "a", title: "Part A. Existing and alternative models", type: "rows", add: "Add a model", cols: [
           { id: "model", label: "Model" }, { id: "where", label: "Where and who runs it" }, { id: "services", label: "Services" },
@@ -46,212 +99,133 @@ window.PK_AGENDA = (function () {
           preset: ["Service package", "Targeting", "Workforce", "Supervision", "Supplies", "Data", "Financing", "Governance"], presetCol: "element",
           cols: [
             { id: "element", label: "Element" },
-            { id: "class", label: "Core or adaptable", type: "select", options: ["Core", "Adaptable", "Not settled: send to the register"] },
-            { id: "break", label: "What would break if it varied?" }, { id: "options", label: "Options it matters for" },
+            { id: "class", label: "Core or adaptable", type: "select", options: ["Core", "Adaptable", "Cannot classify: send to the register"] },
+            { id: "break", label: "What would break if it varied?" },
             { id: "open", label: "Open question" }, { id: "una", label: "UNA link" }] }
       ] },
 
-    weights_choice: { title: "Weights: pre-work or equal", kind: "form", items: [
-      { id: "weights", label: "Which weights do you prefer?", type: "single", options: [["prework", "Pre-work weights"], ["equal", "Equal weights"]] }] },
-
-    accept_contest_option: { title: "Preference result: accept or contest", kind: "form", items: [
-      { id: "answer", label: "Do you accept this result, or do you contest it?", type: "single", options: [["accept", "Accept"], ["contest", "Contest"]] },
-      { id: "option", label: "If you contest, which option would you put forward instead?", type: "single", options: ABCD, showIf: { item: "answer", value: "contest" } }] },
-
-    d2_score: { title: "D2 silent scores (each person)", kind: "form", resultMode: "spread",
-      help: "Score each option from 1 to 5, where 5 is strongest. Work alone and in silence.",
-      grid: { rows: CRIT, cols: OPTS, scale: ["1", "2", "3", "4", "5"] } },
-
-    d2_table: { title: "D2 options appraisal: the table's agreed scores", kind: "sheet", sheets: TABLES, spreadOf: "d2_score", weighted: true,
-      intro: "Discuss where the silent scores differ by two points or more. Write the table's agreed score and a one-line reason for every option.",
-      sections: [
-        { id: "m", title: "Agreed scores (1 to 5, 5 is strongest)", type: "matrix", rows: CRIT, opts: OPTS },
-        { id: "req", title: "Requirement (not scored): contribution to the 60 million registered and 48 million screened", type: "perOption", opts: OPTS,
-          help: "For each option: how it would contribute in the regions at your table, and what it would need." },
-        { id: "r", title: "Group reflection", type: "fields", fields: [
-          { id: "strongest", label: "Which option did your group find strongest, and on which criteria?" },
-          { id: "hybrid", label: "What hybrid, if any, would combine the strengths you saw?" },
-          { id: "change", label: "What would make you change your assessment?" }] }
-      ] },
-
-    departures: { title: "Departures from the pre-work", kind: "sheet", sheets: TABLES,
-      intro: "Mark every option where your table is clearly above or below the pre-work result, with one sentence of reason.",
-      sections: [
-        { id: "d", title: "Departures", type: "rows", fixedRows: OPTS.map(function (o) { return ["opt" + o, "Option " + o]; }), labelCol: "Option", cols: [
-          { id: "dir", label: "Compared with the pre-work", type: "select", options: ["Above", "Below", "About the same"] },
-          { id: "criteria", label: "Criteria where you depart" },
-          { id: "reason", label: "What does your table know that the pre-work did not capture?" }] }
-      ] },
-
-    hybrid: { title: "Hybrid line", kind: "sheet", sheets: TABLES,
-      intro: "Is there an element of one option that fixes the main weakness of another? Do not score it today.",
-      sections: [
-        { id: "h", title: "Hybrid proposal", type: "fields", fields: [
-          { id: "base", label: "Base option", type: "select", options: OPTS },
-          { id: "borrowed", label: "Element borrowed" },
-          { id: "from", label: "Borrowed from option", type: "select", options: OPTS },
-          { id: "true", label: "What would have to be true for it to work" },
-          { id: "risk", label: "Main risk it adds" }] }
-      ] },
-
-    ballot_d3: { title: "Individual ballot (D3)", kind: "form", items: [
-      { id: "first", label: "My preferred option is", type: "single", options: ABCD.concat([["Hybrid", "Hybrid"]]) },
-      { id: "hybrid_text", label: "Describe your hybrid", type: "text", showIf: { item: "first", value: "Hybrid" } },
-      { id: "second", label: "My second choice is", type: "single", options: ABCD.concat([["None", "None"]]) },
-      { id: "no_support", label: "An option I could not support under any conditions (choose any, or none)", type: "multi", options: ABCD },
-      { id: "no_support_because", label: "Because", type: "text", showIf: { item: "no_support", filled: true } },
-      { id: "condition", label: "A condition under which my first choice would work", type: "text" }] },
-
-    regional_worksheet: { title: "Reaching-the-numbers worksheet (D10)", kind: "sheet", sheets: TABLES,
-      intro: "Add the regions at your table; the minimum numbers fill in by themselves. They are estimates (national target x the region's share of the population), not DOH targets. Record disagreement rather than averaging it away.",
-      sections: [
-        { id: "reg", title: "Regions at your table", type: "rows", add: "Add a region", cols: [
-          { id: "region", label: "Region", type: "region" },
-          { id: "facilities", label: "What could be reached through facilities" },
-          { id: "agencies", label: "What through other agencies" },
-          { id: "community", label: "What is left for community-based work" },
-          { id: "needs", label: "What it would need; option it depends on" }] },
-        { id: "v", title: "Each option: can it reach the numbers in your regions?", type: "rows", fixedRows: OPTS.map(function (o) { return ["opt" + o, "Option " + o]; }), labelCol: "Option", cols: [
-          { id: "verdict", label: "Verdict", type: "select", options: ["Reaches the numbers", "Reaches them with conditions", "Does not reach them"] },
-          { id: "finding", label: "One finding" }, { id: "condition", label: "One condition" }] }
-      ] },
+    d10: { title: "Your region's routes to the UNA numbers (D10)", kind: "form", d10: true, live: true,
+      help: "Choose your region. Split how it will reach its minimum numbers across the routes; the shares must add up to 100%. Each share shows its estimated count." },
 
     // ---------- Day 2 ----------
-    correction: { title: "Corrections to the summary", kind: "sheet", sheets: TABLES,
-      intro: "Mark anything in the one-page summary that does not match what your table said yesterday.",
-      sections: [{ id: "c", title: "Corrections", type: "rows", add: "Add a correction", cols: [
-        { id: "wrote", label: "What we wrote" }, { id: "should", label: "What it should say" }] }] },
+    c6_1: clinic("c6_1", "C1", "Clinic 1: targeting, eligibility and data", [
+      ["Finding the people and communities the new PK serves", [
+        "How will the new PK identify the people or communities it serves, and from which sources?",
+        "Who does this at each level, and how often is it repeated?",
+        "When sources disagree or someone is missed, how is it settled, and how is that person or community added?"]],
+      ["Eligibility", [
+        "How is it confirmed that a person or community is covered, who confirms it, and with what proof?",
+        "When does a person or community start or stop receiving PK support, and who decides?",
+        "How is a person handed over between settings (home, community, facility) so that care continues?"]],
+      ["Data", [
+        "What does every site record as a minimum, and in which system, so that nothing is entered twice?",
+        "Who reports to whom, how often, and who checks the quality of the data?",
+        "How is personal data protected, and who may see what?"]]]),
+    c6_2: clinic("c6_2", "C2", "Clinic 2: service scope, workforce and routes to the UNA numbers", [
+      ["Delivering the services (the core and adaptable elements agreed in Session 3)", [
+        "How are the core elements delivered in the same way everywhere?",
+        "How are the adaptable elements chosen locally, who agrees to the choice, and how is it recorded?",
+        "How do the supplies, equipment and medicines each service needs reach the people served?",
+        "How do people move from PK to the rest of the health system (primary care, medicines, referral) so that care continues?"]],
+      ["Workforce", [
+        "Who delivers the services, and does the direction need a different scope of work or a new cadre?",
+        "How are the people who deliver them paid, by whom and from which budget?",
+        "Who supervises and trains them, how often, and how is their work recognized?"]],
+      ["Routes to the UNA numbers", [
+        "How will regions reach their minimum numbers through each route (building on Session 4)?",
+        "What does each route need that it does not have now?",
+        "How is progress tracked, and what happens when a region falls behind?"]]]),
+    c6_3: clinic("c6_3", "C3", "Clinic 3: financing, governance and transition", [
+      ["Financing", [
+        "Which funding sources pay for what?",
+        "Is any of the funding weighted by need, and how?",
+        "How do funds reach the level where services are delivered, and how are they accounted for?"]],
+      ["Governance", [
+        "Which office owns what at each level (national, regional, province or city, municipality, barangay)?",
+        "Who decides, who implements and who monitors, and how do the offices and partners involved coordinate?",
+        "What does each level commit to, and in what form?"]],
+      ["Transition", [
+        "How does the move from the current PK to the new PK work, and in what steps?",
+        "What continues unchanged in the meantime so that services are not interrupted, and what stops?",
+        "What must be in place by the start of 2027?"]]]),
+    s6_merge: { title: "Agreed components (Session 6 plenary)", kind: "sheet", sheets: ["ROOM"], staffOnly: true, view: "merge6",
+      intro: "After each clinic presents, staff type what the plenary agreed in the last two columns. The agreed components are what Session 7 builds indicators on." },
 
-    case_for_against: { title: "Case for and against the carried direction", kind: "sheet", sheets: TABLES,
-      intro: "Tables 1 and 3 prepare the case FOR the carried direction; tables 2 and 4 prepare the case AGAINST. Argue your side even if you disagree.",
-      sideBySheet: { T1: "For", T2: "Against", T3: "For", T4: "Against" },
-      sections: [{ id: "k", title: "Your three strongest points", type: "fields", fields: [
-        { id: "p1", label: "Point 1" }, { id: "p2", label: "Point 2" }, { id: "p3", label: "Point 3" },
-        { id: "change", label: "The one thing that would change your mind" }] }] },
-
-    consent_d4: { title: "Consent level (D4)", kind: "form", items: [
-      { id: "level", label: "My level of consent", type: "scale", options: [
-        ["1", "Cannot support; alternative proposed"], ["2", "Serious reservations; conditions needed"], ["3", "Can live with it; concerns recorded"],
-        ["4", "Support with minor concerns"], ["5", "Fully support"]] },
-      { id: "reason", label: "My reason, condition or alternative (needed for level 1 or 2)", type: "text" }] },
-
-    conditions_register: { title: "Conditions and reservations register (D4)", kind: "sheet", sheets: ["ROOM"], staffOnly: true,
-      intro: "Staff write each reason given in the consent round as a concern or a condition. Group only, never a name.",
-      sections: [{ id: "c", title: "Register", type: "rows", add: "Add a condition or reservation", cols: [
-        { id: "raised", label: "Condition or reservation raised" },
-        { id: "kind", label: "Concern or condition", type: "select", options: ["Concern", "Condition"] },
-        { id: "by", label: "Raised by (group only)", type: "select", options: GROUP_OPTS },
-        { id: "response", label: "Response or design implication" }] }] },
-
-    clinic_d5_1: { title: "Clinic 1 (D5): targeting, eligibility and data", kind: "sheet", sheets: ["C1"], clinic: true,
-      intro: "Who is prioritized, using what data, how often? What happens to communities that are not prioritized, or that improve and graduate? What data identify the people or communities concerned, who holds them, and how often are they refreshed?",
-      sections: [{ id: "q", title: "Design questions", type: "rows", add: "Add a design question", cols: [
-        { id: "question", label: "Design question" }, { id: "answer", label: "Proposed answer" }, { id: "open", label: "Open issue" },
-        { id: "owner", label: "Owner (office)" }, { id: "by", label: "Decide by" }, { id: "una", label: "UNA link" },
-        { id: "priority", label: "Priority", type: "select", options: ["High", "Medium", "Low"] }] }] },
-    clinic_d5_2: { title: "Clinic 2 (D5): service scope, workforce and routes to the numbers", kind: "sheet", sheets: ["C2"], clinic: true,
-      intro: "What functions are fixed nationally? What is chosen locally? How is linkage to YAKAP, GAMOT and referral networks guaranteed? Who delivers, and how are BHWs paid, supervised and trained? How are the regional minimum numbers reached (see D10)?",
-      sections: [{ id: "q", title: "Design questions", type: "rows", add: "Add a design question", cols: [
-        { id: "question", label: "Design question" }, { id: "answer", label: "Proposed answer" }, { id: "open", label: "Open issue" },
-        { id: "owner", label: "Owner (office)" }, { id: "by", label: "Decide by" }, { id: "una", label: "UNA link" },
-        { id: "priority", label: "Priority", type: "select", options: ["High", "Medium", "Low"] }] }] },
-    clinic_d5_3: { title: "Clinic 3 (D5): financing, governance and transition", kind: "sheet", sheets: ["C3"], clinic: true,
-      intro: "Which channels apply: NEP, Special Health Fund, LHSML grants, PhilHealth, partners? Is any allocation weighted by need? Which office owns what? How does the 2026-2027 transition work?",
-      sections: [{ id: "q", title: "Design questions", type: "rows", add: "Add a design question", cols: [
-        { id: "question", label: "Design question" }, { id: "answer", label: "Proposed answer" }, { id: "open", label: "Open issue" },
-        { id: "owner", label: "Owner (office)" }, { id: "by", label: "Decide by" }, { id: "una", label: "UNA link" },
-        { id: "priority", label: "Priority", type: "select", options: ["High", "Medium", "Low"] }] }] },
-
-    indicators_d6: { title: "Targets and indicators matrix (D6)", kind: "sheet", sheets: TABLES,
-      levelBySheet: { T1: "National / Executive Committee", T2: "CHD / MOH-BARMM", T3: "LGU / province", T4: "Barangay" },
-      intro: "Accept or contest each pre-work result placed on your row. For each result you keep, write the decision it supports and who makes it; a result with no decision does not stay. Add up to two missing results. Mark your top three.",
-      sections: [{ id: "i", title: "Your level", type: "rows", add: "Add a result", cols: [
-        { id: "result", label: "Result (from the pre-work or added)" },
-        { id: "source", label: "Source", type: "select", options: ["From the pre-work", "Added by the table"] },
-        { id: "accept", label: "Accept or contest", type: "select", options: ["Accept", "Contest"] },
-        { id: "why", label: "If contested, why" },
-        { id: "decision", label: "Decision supported, and who decides" },
-        { id: "indicator", label: "Question the monitoring system must answer; candidate indicator or target" },
-        { id: "data", label: "Likely data source; feasibility" },
-        { id: "una", label: "UNA deliverable it informs" },
-        { id: "top", label: "Top three", type: "check" }] }],
-      prompts: ["Are we reaching those with the greatest needs (Patas)?", "Are people who are screened actually linked to care (Pillar 3)?",
-        "Is effort rising where need is greater, or falling?", "Can results be reported within the 30-day review cycle (Mabilis)?",
-        "What must not be added to LGU reporting burden?", "Where will barangay-level data come from?",
-        "Is equity targeting itself being monitored, separately from coverage?"] },
-
-    gallery_walk: { title: "Gallery walk: mark what you support", kind: "gallery", source: "indicators_d6", sourceSection: "i", sourceCol: "indicator", resultMode: "spread",
-      help: "Choose up to three indicators you support. You can also mark any you cannot support." },
+    c7_1: { title: "Clinic 1: indicators", kind: "sheet", sheets: ["C1"], clinic: true, view: "ind", from: "C1", intro: IND_INTRO },
+    c7_2: { title: "Clinic 2: indicators", kind: "sheet", sheets: ["C2"], clinic: true, view: "ind", from: "C2", intro: IND_INTRO },
+    c7_3: { title: "Clinic 3: indicators", kind: "sheet", sheets: ["C3"], clinic: true, view: "ind", from: "C3", intro: IND_INTRO },
+    ref_ind: { title: "Pre-work indicators (reference)", kind: "sheet", sheets: ["ROOM"], staffOnly: true, view: "refind", importable: true,
+      intro: "Shown on the Session 7 slide as a reference only. Staff enter or paste the list before Day 2.",
+      sections: [
+        { id: "p", title: "What the pre-work said would be most useful (Table 44)", type: "rows", add: "Add a result", cols: [{ id: "text", label: "Result" }, { id: "n", label: "Count" }] },
+        { id: "w", title: "Also suggested in the written answers (Table 45)", type: "rows", add: "Add a theme", cols: [{ id: "text", label: "Theme" }, { id: "n", label: "Count" }] }] },
 
     partner_d7: { title: "Partner alignment matrix (D7)", kind: "sheet", sheets: TABLES,
       intro: "Partners and DOH offices each fill in a row. The matrix goes to BIHC as an input to the partner resource plan.",
       sections: [{ id: "p", title: "Partners and offices", type: "rows", add: "Add a partner or office", cols: [
         { id: "partner", label: "Partner or office" }, { id: "current", label: "Current support relevant to PK" },
         { id: "pillar", label: "UNA pillar and sub-component" },
-        { id: "fit", label: "Fit with the preferred direction", type: "select", options: ["High", "Partial", "Low"] },
+        { id: "fit", label: "Fit with the agreed direction", type: "select", options: ["High", "Partial", "Low"] },
         { id: "realign", label: "Possible realignment, next 16 months" },
         { id: "gap", label: "Gap the Department should seek support for" }] }] },
-
-    action_register: { title: "Action register (read-out)", kind: "sheet", sheets: ["ROOM"], staffOnly: true, flagMissing: ["owner", "when"],
-      intro: "Staff type each action as the rapporteur reads it out. Anything with no owner or no date is flagged for follow-up.",
-      sections: [{ id: "a", title: "Actions", type: "rows", add: "Add an action", cols: [
-        { id: "action", label: "Action" }, { id: "owner", label: "Who owns it" }, { id: "when", label: "By when" },
-        { id: "table", label: "From", type: "select", options: ["Table 1", "Table 2", "Table 3", "Table 4", "Other"] },
-        { id: "reply", label: "Owner's answer", type: "select", options: ["Yes", "No", "Not in the room"] }] }] },
 
     evaluation: { title: "Evaluation (D8)", kind: "link" },
 
     // ---------- staff registers used on both days ----------
     results_contest: { title: "Results and contest sheet (D12)", kind: "sheet", sheets: ["ROOM"], staffOnly: true,
-      intro: "One row per topic. An uncontested result is carried; a contested one is settled by show of hands (by ballot D3 for the option preference).",
+      intro: "One row per topic. An uncontested result is carried; a contested one is settled by show of hands or by a quick vote.",
       sections: [{ id: "t", title: "Topics", type: "rows", add: "Add a topic", cols: [
         { id: "topic", label: "Topic" }, { id: "items", label: "Items" }, { id: "result", label: "Result (counts, by combined group)" },
         { id: "flag", label: "Flag before the session" }, { id: "contest", label: "Contested by (group only) and reason" },
         { id: "outcome", label: "Outcome", type: "select", options: ["Carried", "Amended", "Overturned"] }, { id: "vote", label: "Vote" }] }] },
     design_questions: { title: "Design-questions register", kind: "sheet", sheets: ["ROOM"], staffOnly: true,
-      intro: "Anything unsettled (for example from D9 Part B) goes here for the Day 2 clinics.",
+      intro: "Anything unsettled (for example elements D9 could not classify) goes here for the Day 2 clinics.",
       sections: [{ id: "q", title: "Register", type: "rows", add: "Add a question", cols: [
         { id: "question", label: "Design question or unsettled element" }, { id: "from", label: "Raised in (session, table)" },
         { id: "clinic", label: "Clinic", type: "select", options: ["Clinic 1", "Clinic 2", "Clinic 3", "Not assigned"] },
         { id: "status", label: "Status", type: "select", options: ["Open", "Answered in a clinic", "Parked"] }] }] }
   };
 
-  // Program order. Each block is one part of a session, with its time.
-  var PROGRAM = [
-    { day: "Day 1 · Wednesday 25 November", blocks: [
-      { session: "Both days", name: "Staff registers", time: "", acts: ["results_contest", "design_questions"] },
-      { session: "Session 0", name: "Clarifying questions", time: "09:20–10:10", acts: ["accept_contest"] },
-      { session: "Session 1", name: "Table work", time: "10:15–10:45", acts: ["d9_models"] },
-      { session: "Session 2", name: "Weights", time: "11:35–11:43", acts: ["weights_choice"] },
-      { session: "Session 3", name: "Contest round", time: "13:10–13:20", acts: ["accept_contest_option"] },
-      { session: "Session 3", name: "Scoring", time: "13:20–14:05", acts: ["d2_score", "d2_table"] },
-      { session: "Session 3", name: "Departures", time: "14:05–14:15", acts: ["departures"] },
-      { session: "Session 3", name: "Hybrids", time: "14:15–14:20", acts: ["hybrid"] },
-      { session: "Session 3", name: "Ballot, only if contested", time: "14:20–14:35", acts: ["ballot_d3"] },
-      { session: "Session 4", name: "Worksheet", time: "14:58–15:30", acts: ["regional_worksheet"] }
+  // The slides, in running order. No times: the workshop manages time as it goes.
+  //   acts: the activities this slide opens on phones (forms and table or clinic sheets).
+  //   shown: staff sheets this slide puts on the room screen and phones (read-only for participants).
+  //   reveal: staff sheets that phones need to read on this slide (made readable on arrival).
+  //   optional: Next and Previous skip it; staff start it from the slide list.
+  var SLIDES = [
+    { day: "Day 1 · Wednesday 25 November", slides: [
+      { id: "s0_1", session: "Session 0: where PK stands", title: "0.1 Your clarifying question", acts: ["s0_clarify"] },
+      { id: "s0_2", session: "Session 0: where PK stands", title: "0.2 A result you would question", acts: ["s0_question"] },
+      { id: "s1_1", session: "Session 1: the eight questions and the weights", title: "1.1 Accept the weights?", acts: ["s1_weights"] },
+      { id: "s1_2", session: "Session 1: the eight questions and the weights", title: "1.2 Vote on the weights (if contested)", acts: ["s1_vote"], optional: true },
+      { id: "s2_1", session: "Session 2: one direction", title: "2.1 The starting elements", shown: ["s2_start"] },
+      { id: "s2_2", session: "Session 2: one direction", title: "2.2 Choose your table's elements", acts: ["s2_choose"], reveal: ["s2_start"] },
+      { id: "s2_3", session: "Session 2: one direction", title: "2.3 Test your direction", acts: ["s2_test"], reveal: ["s2_start"] },
+      { id: "s2_m", session: "Session 2: one direction", title: "Merge: the one direction", shown: ["s2_merge"], reveal: ["s2_start", "s2_choose"] },
+      { id: "s2_4", session: "Session 2: one direction", title: "2.4 Agreement check (only if needed)", acts: ["s2_agree"], optional: true, reveal: ["s2_merge"] },
+      { id: "s3_1", session: "Session 3: models, core and adaptable elements", title: "3.1 What can be carried over", acts: ["s3_carry"] },
+      { id: "s3_2", session: "Session 3: models, core and adaptable elements", title: "3.2 Elements the pre-work settles", acts: ["s3_settled"] },
+      { id: "s3_3", session: "Session 3: models, core and adaptable elements", title: "3.3 Models and core or adaptable elements (D9)", acts: ["d9_models"] },
+      { id: "s4_1", session: "Session 4: reaching the UNA numbers", title: "4.1 Your region's routes (D10)", acts: ["d10"] }
     ] },
-    { day: "Day 2 · Thursday 26 November", blocks: [
-      { session: "Both days", name: "Staff registers", time: "", acts: ["results_contest", "design_questions"] },
-      { session: "Synthesis", name: "Corrections", time: "09:14–09:20", acts: ["correction"] },
-      { session: "Session 5", name: "Case for and against", time: "09:25–09:40", acts: ["case_for_against"] },
-      { session: "Session 5", name: "Consent round", time: "10:50–11:10", acts: ["consent_d4", "conditions_register"] },
-      { session: "Session 6", name: "Clinics", time: "12:40–13:25", acts: ["clinic_d5_1", "clinic_d5_2", "clinic_d5_3"] },
-      { session: "Session 7", name: "Matrix work", time: "14:05–14:35", acts: ["indicators_d6"] },
-      { session: "Session 7", name: "Harvest", time: "14:35–14:50", acts: ["gallery_walk"] },
-      { session: "Session 8", name: "Partner matrix", time: "14:50–15:15", acts: ["partner_d7"] },
-      { session: "Session 8", name: "Read-out", time: "15:15–15:25", acts: ["action_register"] },
-      { session: "Session 9", name: "Evaluation", time: "15:40–15:50", acts: ["evaluation"] }
+    { day: "Day 2 · Thursday 26 November", slides: [
+      { id: "s5_1", session: "Session 5: recap of Day 1", title: "Recap in plenary (show of hands)", acts: [] },
+      { id: "s6_1", session: "Session 6: how the direction will work", title: "6.1 The clinics", acts: ["c6_1", "c6_2", "c6_3"], reveal: ["s2_merge"] },
+      { id: "s6_m", session: "Session 6: how the direction will work", title: "6.2 Agreed components (plenary)", shown: ["s6_merge"], reveal: ["c6_1", "c6_2", "c6_3"] },
+      { id: "s7_1", session: "Session 7: indicators", title: "7.1 Indicators for the agreed components", acts: ["c7_1", "c7_2", "c7_3"], reveal: ["s6_merge", "ref_ind"] },
+      { id: "s8_1", session: "Session 8: partner alignment", title: "8.1 Partner alignment matrix (D7)", acts: ["partner_d7"] },
+      { id: "close", session: "Closing", title: "Evaluation", acts: ["evaluation"] }
     ] }
   ];
+  // staff sheets kept on the Registers tab
+  var REGISTERS = ["s2_start", "ref_ind", "s2_merge", "s6_merge", "results_contest", "design_questions"];
 
-  // D11, the one-page table guide, shown on group devices
+  // D11, the one-page table guide, shown on every phone
   var GUIDE = [
-    ["Roles", "The chair is a regional participant who is not the most senior at the table; the chair keeps time and makes sure every voice is heard. The rapporteur fills the sheets on this device. One of the four BLHSD staff anchors each table and acts as the resource person."],
-    ["Order of work", "The pre-work results are the group's starting vote: accept a result or contest it. A table that scores options on D2 scores first and then compares with the pre-work result."],
-    ["Recording", "Write a one-line reason for every score. Record disagreements and minority positions as they are said; do not average them away."],
-    ["Departing from the pre-work result", "Mark the option and criterion where the table's result differs from the pre-work, and give one sentence of reason."],
+    ["Roles", "The chair is a regional participant who is not the most senior at the table; the chair keeps time and makes sure every voice is heard. The rapporteur usually types the table's answers, on any phone at the table. One of the four BLHSD staff anchors each table and acts as the resource person."],
+    ["What is on your phone", "Your phone shows only the slide that is on the screen. Each slide says whether to answer on your own or as a table or clinic."],
+    ["Recording", "Write a one-line reason where asked. Record disagreements and minority positions as they are said; do not average them away."],
     ["Counts and confidentiality", "The pre-work results are counts for combined groups. Do not try to work out who answered what."]
   ];
 
-  return { activities: ACTIVITIES, program: PROGRAM, crit: CRIT, opts: OPTS, regions: REGIONS, nat: NAT, guide: GUIDE };
+  return { activities: ACTIVITIES, slides: SLIDES, registers: REGISTERS, crit: CRIT, regions: REGIONS, nat: NAT, routes: ROUTES, levels: LEVELS, guide: GUIDE };
 })();
