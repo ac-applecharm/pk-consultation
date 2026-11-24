@@ -373,7 +373,7 @@
       if (pendingCell(parts[0], parts[1], k)) return;
       var v = sheetBody(parts[0], parts[1])[k];
       if (v === undefined) return;
-      if (inp.type === "checkbox") inp.checked = !!v; else if (inp.value !== String(v)) inp.value = v;
+      if (inp.type === "checkbox") inp.checked = !!v; else if (inp.type === "radio") inp.checked = String(v) === inp.value; else if (inp.value !== String(v)) inp.value = v;
     });
   }
   function refreshLive() {
@@ -601,12 +601,12 @@
   // which view draws a sheet, and which other sheets it reads
   function depsOf(act) {
     var def = ACT[act] || {};
-    return [act].concat({ choose: ["s2_start"], test: ["s2_start", "s2_choose"], merge2: ["s2_start", "s2_choose"], merge6: ["c6_1", "c6_2", "c6_3"], ind: ["s6_merge", "ref_ind"] }[def.view] || [],
+    return [act].concat({ test: ["s2_choose"], merge2: ["s2_choose"], merge6: ["c6_1", "c6_2", "c6_3"], ind: ["s6_merge", "ref_ind"] }[def.view] || [],
       def.showDirection ? ["s2_merge"] : []);
   }
   function viewFor(act, sheet, editable, v) {
     var def = ACT[act];
-    if (def.view === "start") return editable ? sheetView(act, def, sheet, true, v) : startList();
+    if (def.view === "start") return startList();
     if (def.view === "choose") return chooseView(sheet, editable, v);
     if (def.view === "test") return testView(sheet, editable, v);
     if (def.view === "merge2") return merge2View(editable, v);
@@ -619,155 +619,190 @@
   }
 
   // =====================================================================================
-  // SESSION 2: starting elements, the table's choice, the statement, the test, the merge grid
+  // SESSION 2: for each part of the new PK, a table picks Option A, B, C or D, or makes a mix from the
+  // pre-work ideas (one idea per line) and its own; then who does what (stakeholders x roles).
+  // Sheet cells: pk.<part> = A|B|C|D|mix · pw.<part>.<idea> = ticked · mix.<part> = own text
+  //              st.<stakeholder>.<role> / .none / .rem · rows a table adds: ns._rows, ns.<row>.name|<role>|none|rem
   // =====================================================================================
-  function startModel() {
-    var b = sheetBody("s2_start", "ROOM"), sec = ACT.s2_start.sections, m = { groups: [], stakes: [], roles: [], stakeTheme: clean(b["m.theme"]) };
-    var byPhrase = {};
-    rowIds(sec[0], b).forEach(function (r) {
-      var ph = clean(b["e." + r + ".phrase"]), txt = clean(b["e." + r + ".element"]), th = String(b["e." + r + ".theme"] || "").trim();
-      if (!txt) return;
-      var g = byPhrase[ph];
-      if (!g) { g = byPhrase[ph] = { phrase: ph, h: "x" + fnv(ph), theme: th, els: [] }; m.groups.push(g); }
-      if (!g.theme && th) g.theme = th;
-      g.els.push({ rid: r, text: txt });
-    });
-    rowIds(sec[1], b).forEach(function (r) { var n = clean(b["s." + r + ".name"]); if (n) m.stakes.push({ rid: r, name: n }); });
-    rowIds(sec[2], b).forEach(function (r) { var n = clean(b["r." + r + ".role"]); if (n) m.roles.push({ rid: r, role: n }); });
-    return m;
+  var S2 = AG.s2;
+  function themeText(th) { var t = S2.themes[th]; return t ? t.name + " · " + t.n + " answers · mostly " + t.mostly : ""; }
+  function ideaTag(i) { return el("span", { class: "itag", text: themeText(i.th) }); }
+  // the ideas of one part, in their sub-groups, in order
+  function subGroups(ideas) {
+    var out = [], at = {};
+    ideas.forEach(function (i) { var s = i.sub || ""; if (!(s in at)) { at[s] = out.length; out.push({ sub: s, ideas: [] }); } out[at[s]].ideas.push(i); });
+    return out;
   }
-  // what one table chose, as sentences
-  function tableChoice(m, b) {
-    var c = { groups: [], stakes: [], others: [] };
-    m.groups.forEach(function (g) {
-      var texts = g.els.filter(function (e) { return b["el." + e.rid]; }).map(function (e) { return e.text; });
-      addedRows(b, g.h).forEach(function (r) { var t = clean(b[g.h + "." + r + ".t"]); if (t) texts.push(t); });
-      c.groups.push({ phrase: g.phrase, texts: texts });
-    });
-    function rolesOf(pre) {
-      var rs = m.roles.filter(function (r) { return b[pre + ".r_" + r.rid]; }).map(function (r) { return r.role; });
-      var o = clean(b[pre + ".other"]); if (o) rs.push(o);
-      return rs;
-    }
-    m.stakes.forEach(function (s) { if (b["st." + s.rid]) c.stakes.push({ name: s.name, roles: rolesOf("st." + s.rid) }); });
-    addedRows(b, "ns").forEach(function (r) { var n = clean(b["ns." + r + ".name"]); if (n) c.stakes.push({ name: n, roles: rolesOf("ns." + r) }); });
-    addedRows(b, "o").forEach(function (r) { var t = clean(b["o." + r + ".t"]); if (t) c.others.push(t); });
-    return c;
+  function catChoice(cat, b) {
+    return { pick: String(b["pk." + cat.id] || ""), ideas: cat.ideas.filter(function (i) { return b["pw." + cat.id + "." + i.id]; }), own: clean(b["mix." + cat.id]) };
   }
-  function statementOf(c) {
-    var out = [];
-    c.groups.forEach(function (g) { if (g.texts.length) out.push(cap((g.phrase ? g.phrase + " " : "") + joinAnd(g.texts)) + "."); });
-    var first = true;
-    c.stakes.forEach(function (s) {
-      if (!s.roles.length) return;
-      out.push((first ? "In each community, " + s.name : cap(s.name)) + " will " + joinAnd(s.roles) + ".");
+  // a mix as sentences: ideas that share a sentence start are joined into one sentence; then the table's own idea
+  function mixText(cat, ch) {
+    var out = [], at = {}, leads = [];
+    ch.ideas.forEach(function (i) { var l = i.lead || ""; if (!(l in at)) { at[l] = leads.length; leads.push({ lead: l, texts: [] }); } leads[at[l]].texts.push(i.text); });
+    leads.forEach(function (g) { out.push(cap((g.lead ? g.lead + " " : "") + joinAnd(g.texts)) + "."); });
+    if (ch.own) out.push("For " + cat.name.toLowerCase() + ", the table " + (out.length ? "also " : "") + "proposes: " + lowFirst(ch.own) + ".");
+    return out.join(" ");
+  }
+  function optSentence(cat, x) { return "For " + cat.name.toLowerCase() + ", the new PK takes Option " + x + ": " + lowFirst(clean(cat.opts[x])) + "."; }
+  function catLine(cat, ch) {
+    if (/^[ABCD]$/.test(ch.pick)) return optSentence(cat, ch.pick);
+    if (ch.pick === "mix") return mixText(cat, ch);
+    return "";
+  }
+  // the stakeholder rows of one table: the fixed list, then the rows it added
+  function stakeRows(b) {
+    var rows = S2.stakes.map(function (s) { return { pre: "st." + s[0], name: s[1] }; });
+    addedRows(b, "ns").forEach(function (r) { rows.push({ pre: "ns." + r, rid: r, name: clean(b["ns." + r + ".name"]), added: true }); });
+    return rows;
+  }
+  function stakeCell(b, pre) {
+    return { roles: S2.roles.filter(function (r) { return b[pre + "." + r[0]]; }).map(function (r) { return r[1]; }), none: !!b[pre + ".none"], rem: clean(b[pre + ".rem"]) };
+  }
+  function stakeSentences(list) {
+    var out = [], first = true;
+    list.forEach(function (s) {
+      if (!s.name || !s.text) return;
+      out.push((first ? "In each community, " + s.name : cap(s.name)) + " will " + s.text + ".");
       first = false;
     });
-    c.others.forEach(function (t) { out.push("It also " + lowFirst(t) + "."); });
-    return out.join(" ");
+    return out;
+  }
+  // what one table chose, as a statement
+  function tableStatement(b) {
+    var out = S2.cats.map(function (c) { return catLine(c, catChoice(c, b)); }).filter(Boolean);
+    return out.concat(stakeSentences(stakeRows(b).map(function (s) { var c = stakeCell(b, s.pre); return { name: s.name, text: joinAnd(c.roles) }; }))).join(" ");
   }
   function statementBox(title, text, empty) {
     return el("div", { class: "statement" }, el("div", { class: "slab", text: title }), el("p", { text: text || empty || "Nothing chosen yet." }));
   }
   function directionText() { return String(sheetBody("s2_merge", "ROOM").statement || ""); }
   function directionBanner() { return statementBox("The direction agreed in Session 2", directionText(), "Staff have not recorded the agreed direction yet."); }
-  // the starting elements, read-only (slide 2.1, room screen and phones)
-  function startList() {
-    var m = startModel(), box = el("div", { class: "startlist" }), last = null;
-    if (!m.groups.length && !m.stakes.length) return el("p", { class: "muted", text: "The starting elements have not been entered yet (Staff sheets tab)." });
-    box.appendChild(el("p", { class: "help", text: ACT.s2_start.intro.replace(" Staff enter or paste these before the session.", "") }));
-    m.groups.forEach(function (g) {
-      if (g.theme && g.theme !== last) { box.appendChild(el("div", { class: "theme", text: g.theme })); last = g.theme; }
-      box.appendChild(el("div", { class: "phrase" }, el("b", { text: (g.phrase || "") + " …" }), el("ul", null, g.els.map(function (e) { return el("li", { text: e.text }); }))));
+  function otag(x) { return el("span", { class: "otag" + (x === "Mix" ? " mix" : ""), text: x }); }
+  function ideaLines(ideas, each) {
+    var w = el("div");
+    subGroups(ideas).forEach(function (g) {
+      if (g.sub) w.appendChild(el("div", { class: "subh", text: g.sub }));
+      g.ideas.forEach(function (i) { w.appendChild(each(i)); });
     });
-    if (m.stakes.length) {
-      if (m.stakeTheme) box.appendChild(el("div", { class: "theme", text: m.stakeTheme }));
-      box.appendChild(el("div", { class: "phrase" }, el("b", { text: "In each community, … will …" }),
-        el("p", { class: "small", text: "Stakeholders: " + m.stakes.map(function (s) { return s.name; }).join(" · ") }),
-        el("p", { class: "small", text: "Roles to choose from: " + m.roles.map(function (r) { return r.role; }).join(" · ") })));
-    }
+    return w;
+  }
+  // slide 2.1, read-only (room screen and phones): each part with A to D and its pre-work ideas
+  function startList() {
+    var box = el("div", { class: "startlist" });
+    box.appendChild(el("p", { class: "help", text: ACT.s2_start.intro.replace(" Built into the page; nothing to enter.", "") }));
+    S2.cats.forEach(function (cat) {
+      var sec = el("div", { class: "phrase s2cat" }, el("b", { text: cat.name }));
+      S2.options.forEach(function (o) { sec.appendChild(el("div", { class: "optline" }, otag(o[0]), el("span", { text: cat.opts[o[0]] }))); });
+      var pw = el("div", { class: "pwideas" }, el("div", { class: "slab", text: "Pre-work ideas for a mix" }));
+      pw.appendChild(ideaLines(cat.ideas, function (i) { return el("div", { class: "idea" }, el("span", { text: cap(i.text) }), ideaTag(i)); }));
+      sec.appendChild(pw);
+      box.appendChild(sec);
+    });
+    box.appendChild(el("div", { class: "phrase s2cat" }, el("b", { text: "Who does what" }),
+      el("p", { class: "small", text: "Stakeholders: " + S2.stakes.map(function (s) { return cap(s[1]); }).join(" · ") }),
+      el("p", { class: "small", text: "Roles: " + S2.roles.map(function (r) { return r[1]; }).join(" · ") + " · or no role" }),
+      el("p", { class: "small muted", text: "Pre-work: " + themeText(S2.stakeBasis) }),
+      el("p", { class: "small muted", text: S2.basis })));
     return box;
   }
   function chk(q, k, checked, label, disabled, onChange) {
     var cb = el("input", { type: "checkbox", "data-k": k, "data-q": q, checked: !!checked, disabled: !!disabled });
     cb.addEventListener("change", function () { onChange(cb.checked); });
-    return el("label", { class: "ck" + (checked ? " sel" : "") + (disabled ? " off" : "") }, cb, el("span", { text: label }));
+    return el("label", { class: "ck" + (checked ? " sel" : "") + (disabled ? " off" : "") }, cb, el("span", null, label));
   }
-  // slide 2.2: tick the elements, add your own under any sentence, the stakeholder role grid, and the statement
+  function radio(q, k, value, checked, kids, onPick) {
+    var r = el("input", { type: "radio", name: q + "~" + k, value: value, "data-k": k, "data-q": q, checked: !!checked });
+    r.addEventListener("change", function () { if (r.checked) onPick(); });
+    return el("label", { class: "ck opt" + (checked ? " sel" : "") }, r, el("span", { class: "cktext" }, kids));
+  }
+  // slide 2.2: each part (an option or a mix), then who does what, then the table's statement
   function chooseView(sheet, editable, v) {
-    var act = "s2_choose", q = sheetKey(act, sheet), b = sheetBody(act, sheet), m = startModel(), box = el("div", { class: "sheet choose" }), last = null;
-    if (!m.groups.length && !m.stakes.length) return el("p", { class: "muted", text: "The starting elements are not ready yet. Wait for your facilitator." });
+    var act = "s2_choose", q = sheetKey(act, sheet), b = sheetBody(act, sheet), box = el("div", { class: "sheet choose" });
     var redraw = function () { if (v) v.redraw(); };
     var set = function (k, val) { queueCell(act, sheet, k, val); redraw(); };
-    // typing in an added line updates the statement as soon as it is saved, without redrawing the boxes
-    var restate = function () { var p = box.querySelector(".statement p"); if (p) p.textContent = statementOf(tableChoice(m, sheetBody(act, sheet))) || "Nothing chosen yet."; };
-    function addedList(secId, label) {
-      var wrap = el("div");
-      addedRows(b, secId).forEach(function (r) {
-        var k = secId + "." + r + ".t";
-        if (!editable) { if (clean(b[k])) wrap.appendChild(el("div", { class: "ck sel added" }, el("span", { text: "+ " + clean(b[k]) + " (added)" }))); return; }
-        wrap.appendChild(el("div", { class: "addrow" }, input(act, sheet, k, b[k] || "", { label: label, placeholder: "Type it here", onBlur: redraw, onSaved: restate }, true),
-          el("button", { type: "button", class: "linkbtn", text: "Remove", onclick: function () { queueRow(act, sheet, secId, "del", r); redraw(); } })));
+    // typing in a box updates the statement as soon as it is saved, without redrawing the boxes
+    var restate = function () { var p = box.querySelector(".statement p"); if (p) p.textContent = tableStatement(sheetBody(act, sheet)) || "Nothing chosen yet."; };
+    if (editable) box.appendChild(el("p", { class: "help", text: S2.basis }));
+    S2.cats.forEach(function (cat) {
+      var ch = catChoice(cat, b), sec = el("div", { class: "phrase s2cat" }, el("b", { text: cat.name }));
+      if (!editable) {
+        var line = catLine(cat, ch);
+        sec.appendChild(el("p", { class: line ? "" : "muted", text: line || "Not chosen." }));
+        box.appendChild(sec); return;
+      }
+      var k = "pk." + cat.id;
+      S2.options.forEach(function (o) {
+        sec.appendChild(radio(q, k, o[0], ch.pick === o[0], [otag(o[0]), el("span", { text: cat.opts[o[0]] })], function () { set(k, o[0]); }));
       });
-      if (editable) wrap.appendChild(el("button", { type: "button", class: "btn ghost small", text: "+ " + label, onclick: function () { queueRow(act, sheet, secId, "add", rid()); redraw(); } }));
-      return wrap;
-    }
-    m.groups.forEach(function (g) {
-      if (g.theme && g.theme !== last) { box.appendChild(el("div", { class: "theme", text: g.theme })); last = g.theme; }
-      var sec = el("div", { class: "phrase" }, el("b", { text: (g.phrase || "") + " …" }));
-      g.els.forEach(function (e) {
-        var k = "el." + e.rid;
-        if (!editable && !b[k]) { sec.appendChild(el("div", { class: "ck off", text: e.text })); return; }
-        sec.appendChild(editable ? chk(q, k, b[k], e.text, false, function (on) { set(k, on); }) : el("div", { class: "ck sel", text: "✓ " + e.text }));
-      });
-      sec.appendChild(addedList(g.h, "Add to this sentence"));
+      sec.appendChild(radio(q, k, "mix", ch.pick === "mix", [otag("Mix"), el("span", { text: "A mix: choose from the pre-work ideas, and add your own" })], function () { set(k, "mix"); }));
+      if (ch.pick === "mix") {
+        var mx = el("div", { class: "mixbox" });
+        mx.appendChild(ideaLines(cat.ideas, function (i) {
+          var ik = "pw." + cat.id + "." + i.id;
+          return chk(q, ik, b[ik], [el("span", { text: cap(i.text) }), ideaTag(i)], false, function (on) { set(ik, on); });
+        }));
+        mx.appendChild(el("label", { class: "sfield" }, el("span", { class: "slab", text: "Add your own" }),
+          input(act, sheet, "mix." + cat.id, b["mix." + cat.id] || "", { label: cat.name + ": your own idea", placeholder: "Your table's own idea for " + cat.name.toLowerCase(), onSaved: restate, onBlur: redraw }, true)));
+        sec.appendChild(mx);
+      }
       box.appendChild(sec);
     });
-    // stakeholder role grid: tick a stakeholder first, then its roles
-    if (m.stakes.length || addedRows(b, "ns").length) {
-      if (m.stakeTheme) box.appendChild(el("div", { class: "theme", text: m.stakeTheme }));
-      var grid = el("div", { class: "phrase" }, el("b", { text: "In each community, … will …" }), el("p", { class: "help", text: "Tick each stakeholder that has a role, then choose its roles." }));
-      function rolesFor(pre, on) {
-        var rbox = el("div", { class: "roles" + (on ? "" : " off") });
-        m.roles.forEach(function (r) {
-          var k = pre + ".r_" + r.rid;
-          if (!editable) { if (b[k]) rbox.appendChild(el("span", { class: "rolechip", text: r.role })); return; }
-          rbox.appendChild(chk(q, k, b[k], r.role, !on, function (x) { set(k, x); }));
-        });
-        var ok = pre + ".other";
-        if (editable) rbox.appendChild(el("label", { class: "sfield" }, el("span", { class: "slab", text: "Another role" }), on ? input(act, sheet, ok, b[ok] || "", { label: "Another role", onBlur: redraw, onSaved: restate }, true) : el("div", { class: "cellro muted", text: "" })));
-        else if (clean(b[ok])) rbox.appendChild(el("span", { class: "rolechip", text: clean(b[ok]) }));
-        return rbox;
-      }
-      m.stakes.forEach(function (s) {
-        var k = "st." + s.rid, on = !!b[k], row = el("div", { class: "stake" + (on ? " on" : "") });
-        if (!editable && !on) return;
-        row.appendChild(editable ? chk(q, k, on, s.name, false, function (x) {
-          queueCell(act, sheet, k, x);
-          if (!x) { m.roles.forEach(function (r) { if (b["st." + s.rid + ".r_" + r.rid]) queueCell(act, sheet, "st." + s.rid + ".r_" + r.rid, false); }); if (b["st." + s.rid + ".other"]) queueCell(act, sheet, "st." + s.rid + ".other", ""); }
-          redraw();
-        }) : el("b", { text: s.name }));
-        row.appendChild(rolesFor("st." + s.rid, on));
-        grid.appendChild(row);
-      });
-      addedRows(b, "ns").forEach(function (r) {
-        var pre = "ns." + r, row = el("div", { class: "stake on" });
-        if (editable) row.appendChild(el("div", { class: "addrow" }, input(act, sheet, pre + ".name", b[pre + ".name"] || "", { label: "Stakeholder you add", placeholder: "Stakeholder", onBlur: redraw, onSaved: restate }, true),
-          el("button", { type: "button", class: "linkbtn", text: "Remove", onclick: function () { queueRow(act, sheet, "ns", "del", r); redraw(); } })));
-        else row.appendChild(el("b", { text: clean(b[pre + ".name"]) + " (added)" }));
-        row.appendChild(rolesFor(pre, true));
-        grid.appendChild(row);
-      });
-      if (editable) grid.appendChild(el("button", { type: "button", class: "btn ghost small", text: "+ Add a stakeholder", onclick: function () { queueRow(act, sheet, "ns", "add", rid()); redraw(); } }));
-      box.appendChild(grid);
-    }
-    var other = el("div", { class: "phrase" }, el("b", { text: "Anything that fits no sentence above" }));
-    other.appendChild(addedList("o", "Add something else"));
-    if (editable || addedRows(b, "o").length) box.appendChild(other);
-    var stmt = statementBox(SHEET_NAMES[sheet] + (editable ? ": your direction" : ": the table's direction"), statementOf(tableChoice(m, b)));
-    // read-only (presented on the screen): the statement first, then what was ticked
+    box.appendChild(stakeGrid(act, sheet, editable, redraw, restate));
+    var stmt = statementBox(SHEET_NAMES[sheet] + (editable ? ": your direction" : ": the table's direction"), tableStatement(b));
+    // read-only (presented on the screen): the statement first, then what was chosen
     if (editable) box.appendChild(stmt); else box.insertBefore(stmt, box.firstChild);
     return box;
+  }
+  // who does what: stakeholders as rows, the roles as columns, plus No role and Remarks
+  function stakeGrid(act, sheet, editable, redraw, restate) {
+    var q = sheetKey(act, sheet), b = sheetBody(act, sheet);
+    var wrap = el("div", { class: "phrase s2cat" }, el("b", { text: "Who does what" }));
+    if (editable) wrap.appendChild(el("p", { class: "help", text: "Tick every role each stakeholder will have, or No role. Add a remark where needed. Add any stakeholder that is missing. (Pre-work: " + themeText(S2.stakeBasis) + ".)" }));
+    var tb = el("table", { class: "restable rolegrid" }), hd = el("tr", null, el("th", { class: "sname", text: "Stakeholder" }));
+    S2.roles.forEach(function (r) { hd.appendChild(el("th", { class: "n", text: cap(r[1]) })); });
+    hd.appendChild(el("th", { class: "n", text: "No role" })); hd.appendChild(el("th", { class: "rem", text: "Remarks" }));
+    tb.appendChild(hd);
+    var shown = 0;
+    stakeRows(b).forEach(function (s) {
+      var c = stakeCell(b, s.pre);
+      if (!editable && !c.roles.length && !c.none && !c.rem) return;
+      shown++;
+      var tr = el("tr"), nm = el("td", { class: "sname" });
+      if (s.added && editable) {
+        nm.appendChild(input(act, sheet, s.pre + ".name", b[s.pre + ".name"] || "", { label: "Other stakeholder", placeholder: "Other (specify)", onSaved: restate, onBlur: redraw }, true));
+        nm.appendChild(el("button", { type: "button", class: "linkbtn", text: "Remove", onclick: function () { queueRow(act, sheet, "ns", "del", s.rid); redraw(); } }));
+      } else nm.appendChild(el("span", { text: s.added ? cap(s.name || "Other") + " (added)" : cap(s.name) }));
+      tr.appendChild(nm);
+      S2.roles.forEach(function (r) {
+        var k = s.pre + "." + r[0], td = el("td", { class: "n" });
+        if (editable) {
+          var cb = el("input", { type: "checkbox", "data-k": k, "data-q": q, checked: c.roles.indexOf(r[1]) >= 0, disabled: c.none,
+            title: c.none ? "Untick No role to choose roles" : null, "aria-label": cap(s.name || "Other") + ": " + r[1] + (c.none ? " (untick No role to choose roles)" : "") });
+          cb.addEventListener("change", function () { queueCell(act, sheet, k, cb.checked); redraw(); });
+          if (c.none) td.className = "n off";
+          td.appendChild(cb);
+        } else td.textContent = c.roles.indexOf(r[1]) >= 0 ? "✓" : "";
+        tr.appendChild(td);
+      });
+      var nk = s.pre + ".none", ntd = el("td", { class: "n none" });
+      if (editable) {
+        var nb = el("input", { type: "checkbox", "data-k": nk, "data-q": q, checked: c.none, "aria-label": cap(s.name || "Other") + ": no role" });
+        nb.addEventListener("change", function () {
+          queueCell(act, sheet, nk, nb.checked);
+          if (nb.checked) S2.roles.forEach(function (r) { if (sheetBody(act, sheet)[s.pre + "." + r[0]]) queueCell(act, sheet, s.pre + "." + r[0], false); });
+          redraw();
+        });
+        ntd.appendChild(nb);
+      } else ntd.textContent = c.none ? "✓" : "";
+      tr.appendChild(ntd);
+      tr.appendChild(el("td", { class: "rem" }, input(act, sheet, s.pre + ".rem", b[s.pre + ".rem"] || "", { label: "Remarks", placeholder: "Remarks" }, editable)));
+      tb.appendChild(tr);
+    });
+    if (shown) wrap.appendChild(el("div", { class: "mscroll" }, tb));
+    else wrap.appendChild(el("p", { class: "muted", text: "No roles marked." }));
+    if (editable) wrap.appendChild(el("button", { type: "button", class: "btn ghost small", text: "+ Other (specify)", onclick: function () { queueRow(act, sheet, "ns", "add", rid()); redraw(); } }));
+    return wrap;
   }
   // slide 2.3: the table's direction on top, then a score and reason for each of the eight questions
   function weightsCarried() {
@@ -786,7 +821,7 @@
   }
   function testView(sheet, editable, v) {
     var act = "s2_test", b = sheetBody(act, sheet), box = el("div", { class: "sheet" });
-    box.appendChild(statementBox(SHEET_NAMES[sheet] + ": the direction you are scoring", statementOf(tableChoice(startModel(), sheetBody("s2_choose", sheet))), "This table did not choose any elements on slide 2.2."));
+    box.appendChild(statementBox(SHEET_NAMES[sheet] + ": the direction you are scoring", tableStatement(sheetBody("s2_choose", sheet)), "This table did not choose anything on slide 2.2."));
     AG.crit.forEach(function (c) {
       var ks = "sc." + c[0], kr = "re." + c[0];
       var sel = input(act, sheet, ks, b[ks] || "", { type: "select", options: ["1", "2", "3", "4", "5"], label: c[1] + ": score" }, editable);
@@ -801,97 +836,115 @@
         el("span", { text: (t.equal != null ? t.equal.toFixed(2) : "—") + " with equal weights" }), " · ", el("span", { class: "muted", text: t.scored + " of 8 scored" }))));
     return box;
   }
-  // the merge grid (staff): what each table chose; the final agreed column; push a row to a quick vote
-  function merge2Rows() {
-    var m = startModel(), rows = [];
-    var tb = {}; TABLES.forEach(function (t) { tb[t] = sheetBody("s2_choose", t); });
-    var lastTheme = null;
-    m.groups.forEach(function (g) {
-      rows.push({ head: g.phrase + " …", theme: g.theme !== lastTheme ? g.theme : "" }); lastTheme = g.theme;
-      g.els.forEach(function (e) {
-        rows.push({ key: "e_" + e.rid, kind: "el", phrase: g.phrase, text: e.text, ticks: TABLES.map(function (t) { return !!tb[t]["el." + e.rid]; }) });
-      });
-      TABLES.forEach(function (t) {
-        addedRows(tb[t], g.h).forEach(function (r) {
-          var txt = clean(tb[t][g.h + "." + r + ".t"]); if (!txt) return;
-          rows.push({ key: "x_" + t + "_" + g.h + "_" + r, kind: "el", phrase: g.phrase, text: txt, by: t, ticks: TABLES.map(function (x) { return x === t; }) });
-        });
-      });
-    });
-    function roles(b, pre) {
-      var rs = m.roles.filter(function (r) { return b[pre + ".r_" + r.rid]; }).map(function (r) { return r.role; });
-      var o = clean(b[pre + ".other"]); if (o) rs.push(o); return rs;
-    }
-    var stakeRows = [];
-    m.stakes.forEach(function (s) {
-      stakeRows.push({ key: "s_" + s.rid, kind: "stake", text: s.name, roles: TABLES.map(function (t) { return tb[t]["st." + s.rid] ? roles(tb[t], "st." + s.rid) : null; }) });
-    });
+  // ----- the merge (staff): per part, what each table chose; a table's mix becomes an option once slide 2.2 has closed -----
+  function chooseClosed() { return actState("s2_choose") !== "open"; }
+  function tableBodies() { var tb = {}; TABLES.forEach(function (t) { tb[t] = sheetBody("s2_choose", t); }); return tb; }
+  function mergeStakes(tb) {
+    var rows = S2.stakes.map(function (s) { return { key: "st." + s[0], name: s[1], per: TABLES.map(function (t) { return stakeCell(tb[t], "st." + s[0]); }) }; });
     TABLES.forEach(function (t) {
       addedRows(tb[t], "ns").forEach(function (r) {
         var n = clean(tb[t]["ns." + r + ".name"]); if (!n) return;
-        stakeRows.push({ key: "ns_" + t + "_" + r, kind: "stake", text: n, by: t, roles: TABLES.map(function (x) { return x === t ? roles(tb[t], "ns." + r) : null; }) });
+        rows.push({ key: "ns." + t + "." + r, name: n, by: t, per: TABLES.map(function (x) { return x === t ? stakeCell(tb[t], "ns." + r) : null; }) });
       });
     });
-    if (stakeRows.length) { rows.push({ head: "In each community, … will …", theme: m.stakeTheme }); rows = rows.concat(stakeRows); }
-    var others = [];
-    TABLES.forEach(function (t) { addedRows(tb[t], "o").forEach(function (r) { var txt = clean(tb[t]["o." + r + ".t"]); if (txt) others.push({ key: "o_" + t + "_" + r, kind: "other", text: txt, by: t, ticks: TABLES.map(function (x) { return x === t; }) }); }); });
-    if (others.length) { rows.push({ head: "Anything that fits no sentence (\"It also …\")" }); rows = rows.concat(others); }
     return rows;
   }
-  function mergeStatement(rows, mb) {
-    var c = { groups: [], stakes: [], others: [] }, gi = {};
-    rows.forEach(function (r) {
-      if (r.head) return;
-      var f = clean(mb["f." + r.key]); if (!f) return;
-      if (r.kind === "el") { if (!(r.phrase in gi)) { gi[r.phrase] = c.groups.length; c.groups.push({ phrase: r.phrase, texts: [] }); } c.groups[gi[r.phrase]].texts.push(f); }
-      else if (r.kind === "stake") c.stakes.push({ name: r.text, roles: [f] });
-      else c.others.push(f);
-    });
-    return statementOf(c);
+  function mergeStatement(mb) {
+    var out = [];
+    S2.cats.forEach(function (c) { var f = String(mb["f.cat." + c.id] || "").trim(); if (f) out.push(/[.!?]$/.test(f) ? f : f + "."); });
+    return out.concat(stakeSentences(mergeStakes(tableBodies()).map(function (s) { return { name: s.name, text: clean(mb["f." + s.key]) }; }))).join(" ");
   }
   function merge2View(editable, v) {
-    var rows = merge2Rows(), mb = sheetBody("s2_merge", "ROOM"), q = sheetKey("s2_merge", "ROOM"), box = el("div", { class: "merge" });
-    if (!rows.length) return el("p", { class: "muted", text: "No starting elements yet." });
+    var mb = sheetBody("s2_merge", "ROOM"), q = sheetKey("s2_merge", "ROOM"), tb = tableBodies(), closed = chooseClosed(), box = el("div", { class: "merge" });
     function saveFinal(k, val) {
-      queueCell("s2_merge", "ROOM", "f." + k, val);
-      var text = mergeStatement(rows, sheetBody("s2_merge", "ROOM"));
+      queueCell("s2_merge", "ROOM", k, val);
+      var text = mergeStatement(sheetBody("s2_merge", "ROOM"));
       queueCell("s2_merge", "ROOM", "statement", text);
       var p = box.querySelector(".merge > .statement p"); if (p) p.textContent = text || "Nothing chosen yet.";
     }
-    var tb = el("table", { class: "restable mtable" }), head = el("tr", null, el("th", { text: "Element" }));
-    TABLES.forEach(function (t) { head.appendChild(el("th", { text: SHEET_NAMES[t] })); });
-    head.appendChild(el("th", { text: "Tables" })); head.appendChild(el("th", { text: "Final agreed element" }));
-    tb.appendChild(head);
-    rows.forEach(function (r) {
-      if (r.head) { tb.appendChild(el("tr", { class: "mhead" }, el("td", { colspan: String(TABLES.length + 3) }, r.theme ? el("div", { class: "theme", text: r.theme }) : null, el("b", { text: r.head })))); return; }
-      var tr = el("tr");
-      tr.appendChild(el("td", null, el("div", { text: r.text }), r.by ? el("div", { class: "muted small", text: "added by " + SHEET_NAMES[r.by] }) : null));
-      var n = 0;
-      TABLES.forEach(function (t, i) {
-        if (r.kind === "stake") { var rs = r.roles[i]; if (rs) n++; tr.appendChild(el("td", { class: "small" }, rs ? (rs.length ? rs.join(", ") : "ticked, no role") : "—")); }
-        else { if (r.ticks[i]) n++; tr.appendChild(el("td", { class: "n", text: r.ticks[i] ? "✓" : "" })); }
+    function finalBox(k, label, placeholder) {
+      var fv = mb[k] || "";
+      if (!editable) return el("div", { class: "finalro" + (clean(fv) ? "" : " muted"), text: clean(fv) || "Not agreed yet." });
+      var ta = el("textarea", { "data-k": k, "data-q": q, rows: "2", value: fv, "aria-label": label, placeholder: placeholder });
+      var t0; ta.addEventListener("input", function () { clearTimeout(t0); t0 = setTimeout(function () { saveFinal(k, ta.value); }, 600); });
+      ta.addEventListener("blur", function () { clearTimeout(t0); if ((sheetBody("s2_merge", "ROOM")[k] || "") !== ta.value) saveFinal(k, ta.value); if (v) v.redraw(); });
+      return ta;
+    }
+    function useBtn(k, text, label) { return el("button", { type: "button", class: "linkbtn", text: label || "Use this", onclick: function () { saveFinal(k, text); if (v) v.redraw(); } }); }
+    function pollBox(key, question, opts) {
+      var w = el("div");
+      if (!editable) return w;
+      w.appendChild(el("button", { type: "button", class: "linkbtn", text: "Push to poll", onclick: function () { S.pollDraft = key; if (v) v.redraw(); } }));
+      if (S.pollDraft === key) w.appendChild(pollDraftForm(question, opts.slice(0, 5), v));
+      return w;
+    }
+    S2.cats.forEach(function (cat) {
+      var fk = "f.cat." + cat.id, blk = el("section", { class: "mblock" }, el("h4", { text: cat.name }));
+      var choices = TABLES.map(function (t) { return catChoice(cat, tb[t]); }), pollOpts = [];
+      var t = el("table", { class: "restable mtable" }), head = el("tr", null, el("th", { text: "Choice" }));
+      TABLES.forEach(function (x) { head.appendChild(el("th", { class: "n", text: SHEET_NAMES[x] })); });
+      head.appendChild(el("th", { class: "n", text: "Tables" }));
+      t.appendChild(head);
+      function row(kids, ticks, useText) {
+        var tr = el("tr", null, el("td", null, kids, editable && useText ? el("div", null, useBtn(fk, useText)) : null)), n = 0;
+        ticks.forEach(function (on) { if (on) n++; tr.appendChild(el("td", { class: "n", text: on ? "✓" : "" })); });
+        tr.appendChild(el("td", { class: "n", text: String(n) }));
+        t.appendChild(tr);
+        return n;
+      }
+      S2.options.forEach(function (o) {
+        var n = row([otag(o[0]), " ", el("span", { text: cat.opts[o[0]] })], choices.map(function (c) { return c.pick === o[0]; }), optSentence(cat, o[0]));
+        if (n) pollOpts.push("Option " + o[0]);
       });
-      tr.appendChild(el("td", { class: "n", text: String(n) }));
-      var fk = "f." + r.key, fv = mb[fk] || "", fin = el("td", { class: "final" });
-      if (editable) {
-        var ta = el("textarea", { "data-k": fk, "data-q": q, rows: "2", value: fv, "aria-label": "Final agreed element", placeholder: r.kind === "stake" ? "Agreed roles, e.g. lead and coordinate" : "Leave empty to leave it out" });
-        var t0; ta.addEventListener("input", function () { clearTimeout(t0); t0 = setTimeout(function () { saveFinal(r.key, ta.value); }, 600); });
-        ta.addEventListener("blur", function () { clearTimeout(t0); if ((sheetBody("s2_merge", "ROOM")[fk] || "") !== ta.value) saveFinal(r.key, ta.value); if (v) v.redraw(); });
-        fin.appendChild(ta);
-        var acts = el("div", { class: "row tight" });
-        if (r.kind === "stake") {
-          TABLES.forEach(function (t, i) { var rs = r.roles[i]; if (rs && rs.length) acts.appendChild(el("button", { type: "button", class: "linkbtn", text: "Copy " + SHEET_NAMES[t], onclick: function () { saveFinal(r.key, joinAnd(rs)); if (v) v.redraw(); } })); });
-        } else acts.appendChild(el("button", { type: "button", class: "linkbtn", text: "Copy the wording", onclick: function () { saveFinal(r.key, r.text); if (v) v.redraw(); } }));
-        acts.appendChild(el("button", { type: "button", class: "linkbtn", text: "Push to poll", onclick: function () { S.pollDraft = r.key; if (v) v.redraw(); } }));
-        fin.appendChild(acts);
-        if (S.pollDraft === r.key) fin.appendChild(pollDraftForm(r.kind === "stake" ? r.text + " will …?" : "Include in the direction: " + (r.phrase ? r.phrase + " " : "") + r.text + "?",
-          r.kind === "stake" ? r.roles.filter(function (x) { return x && x.length; }).map(joinAnd).concat(["Leave out"]).slice(0, 5) : ["Include", "Leave out"], v));
-      } else fin.appendChild(el("div", { text: clean(fv) }));
-      tr.appendChild(fin);
-      tb.appendChild(tr);
+      var mixing = 0;
+      TABLES.forEach(function (x, i) {
+        var c = choices[i]; if (c.pick !== "mix") return;
+        mixing++;
+        if (!closed) return;
+        var mt = mixText(cat, c); if (!mt) return;
+        row([otag("Mix"), " ", el("b", { text: SHEET_NAMES[x] + "'s mix. " }), el("span", { text: mt })], TABLES.map(function (y) { return y === x; }), mt);
+        pollOpts.push(SHEET_NAMES[x] + "'s mix");
+      });
+      if (!closed && mixing) t.appendChild(el("tr", { class: "mhead" }, el("td", { colspan: String(TABLES.length + 2), class: "muted small", text: "Tables are still choosing. Each table's mix appears here as an option when the slide moves on." })));
+      blk.appendChild(el("div", { class: "mscroll" }, t));
+      if (closed && mixing) {
+        var tally = cat.ideas.map(function (i) { var n = choices.filter(function (c) { return c.pick === "mix" && c.ideas.indexOf(i) >= 0; }).length; return n ? cap(i.text) + " (" + n + ")" : ""; }).filter(Boolean);
+        if (tally.length) blk.appendChild(el("p", { class: "muted small", text: "Pre-work ideas in the tables' mixes: " + tally.join(" · ") }));
+      }
+      blk.appendChild(el("div", { class: "final" }, el("span", { class: "slab", text: "Final agreed: " + cat.name }),
+        finalBox(fk, "Final agreed: " + cat.name, "Press Use this on a row above, or type a combined version as full sentences"),
+        pollBox("c_" + cat.id, "Which should the one direction take for " + cat.name.toLowerCase() + "?", pollOpts.length >= 2 ? pollOpts : ["Option A", "Option B", "Option C", "Option D"])));
+      box.appendChild(blk);
     });
-    box.appendChild(el("div", { class: "mscroll" }, tb));
-    box.appendChild(statementBox("The one direction (from the final column)", String(mb.statement || mergeStatement(rows, mb))));
+    // who does what
+    var srows = mergeStakes(tb), sb = el("section", { class: "mblock" }, el("h4", { text: "Who does what" }));
+    var st = el("table", { class: "restable mtable" }), sh = el("tr", null, el("th", { text: "Stakeholder" }));
+    TABLES.forEach(function (x) { sh.appendChild(el("th", { text: SHEET_NAMES[x] })); });
+    sh.appendChild(el("th", { class: "final", text: "Final agreed roles" }));
+    st.appendChild(sh);
+    var any = 0;
+    srows.forEach(function (r) {
+      var used = r.per.some(function (c) { return c && (c.roles.length || c.none || c.rem); });
+      if (!used && !editable) return;
+      any++;
+      var tr = el("tr", null, el("td", null, el("div", { text: cap(r.name) }), r.by ? el("div", { class: "muted small", text: "added by " + SHEET_NAMES[r.by] }) : null));
+      r.per.forEach(function (c) {
+        tr.appendChild(el("td", { class: "small" }, !c ? "—" : (c.roles.length ? joinAnd(c.roles) : (c.none ? "No role" : "—")), c && c.rem ? el("div", { class: "muted", text: "Remark: " + c.rem }) : null));
+      });
+      var fin = el("td", { class: "final" }, finalBox("f." + r.key, "Final agreed roles: " + r.name, "Agreed roles, e.g. plan, lead and fund"));
+      if (editable) {
+        var acts = el("div", { class: "row tight" });
+        TABLES.forEach(function (x, i) { var c = r.per[i]; if (c && c.roles.length) acts.appendChild(useBtn("f." + r.key, joinAnd(c.roles), "Copy " + SHEET_NAMES[x])); });
+        var distinct = []; r.per.forEach(function (c) { if (c && c.roles.length && distinct.indexOf(joinAnd(c.roles)) < 0) distinct.push(joinAnd(c.roles)); });
+        acts.appendChild(pollBox("s_" + r.key, cap(r.name) + " will …?", distinct.concat(["No role"])));
+        fin.appendChild(acts);
+      }
+      tr.appendChild(fin);
+      st.appendChild(tr);
+    });
+    sb.appendChild(any ? el("div", { class: "mscroll" }, st) : el("p", { class: "muted", text: "No roles marked yet." }));
+    box.appendChild(sb);
+    box.appendChild(statementBox("The one direction (from the final agreed boxes)", String(mb.statement || mergeStatement(mb))));
     if (editable) box.appendChild(el("div", { class: "row tight", style: "margin-top:10px" }, el("button", { type: "button", class: "btn ghost small", text: "Start the agreement check (only if needed)", onclick: function () { goTo("s2_4"); } })));
     return box;
   }
@@ -1473,9 +1526,9 @@
     if (!slideActs(s).length && !(s.shown || []).length) box.appendChild(el("p", { class: "muted", text: "Nothing on phones for this slide; phones show the waiting screen. " + (s.id === "s5_1" ? "Run the recap in plenary, with a show of hands if anything is contested." : "") }));
     (s.shown || []).forEach(function (k) {
       var def = ACT[k];
-      box.appendChild(el("p", { class: "muted small", text: def.intro || "" }));
+      if (def.view !== "start") box.appendChild(el("p", { class: "muted small", text: def.intro || "" }));
       if (def.view === "merge2" || def.view === "merge6") box.appendChild(sheetLive(k, "ROOM", true));
-      else { box.appendChild(sheetLive(k, "ROOM", false)); box.appendChild(el("p", { class: "muted small", text: "Edit it on the Staff sheets tab." })); }
+      else { box.appendChild(sheetLive(k, "ROOM", false)); if (def.view !== "start") box.appendChild(el("p", { class: "muted small", text: "Edit it on the Staff sheets tab." })); }
     });
     var sheets = sheetActsOf(s);
     if (sheets.length) {
@@ -1531,7 +1584,7 @@
 
   // ----- staff sheets tab: the registers and the lists staff enter -----
   function tabRegisters(view) {
-    view.appendChild(el("p", { class: "muted", text: "Staff sheets. The starting elements and the pre-work indicators are entered here before the session, in both the trial and the live room." }));
+    view.appendChild(el("p", { class: "muted", text: "Staff sheets. The pre-work indicators (Session 7) are entered here before Day 2, in both the trial and the live room. The Session 2 starting elements are built into the page." }));
     AG.registers.forEach(function (k) {
       var def = ACT[k], on = S.openReg === k, card = el("div", { class: "ctl" });
       card.appendChild(el("div", { class: "row" }, el("h3", { style: "margin:0", text: def.title }), el("button", { type: "button", class: "btn small" + (on ? "" : " ghost"), text: on ? "Close" : "Open", onclick: function () { S.openReg = on ? null : k; renderStaff(true); } })));

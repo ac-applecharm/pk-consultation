@@ -247,6 +247,44 @@ body.proj .regmin { font-size: 18px; }
 .statement { background: var(--card); border: 2px solid var(--accent); border-radius: 14px; padding: 12px 16px; margin: 12px 0; }
 .statement p { margin: 4px 0 0; font-family: var(--serif); font-size: 18px; line-height: 1.5; }
 .statement ol { margin: 6px 0 0; padding-left: 22px; }
+.s2cat > b { font-size: 19px; }
+.otag { display: inline-block; flex: 0 0 auto; min-width: 26px; text-align: center; font-size: 13px; font-weight: 700; padding: 2px 8px; border-radius: 8px; background: var(--accent-soft); color: var(--accent); }
+.otag.mix { background: var(--kick-bg); color: var(--kick-ink); }
+.ck.opt .cktext { display: flex; gap: 8px; align-items: flex-start; }
+.optline { display: flex; gap: 8px; align-items: flex-start; margin: 0 0 6px; line-height: 1.4; }
+.pwideas, .mixbox { margin: 8px 0 0; padding: 8px 10px; border-left: 3px solid var(--line); }
+.mixbox { border-left-color: var(--accent); margin: 0 0 8px 12px; }
+.subh { font-size: 13px; font-weight: 700; color: var(--kick-ink); margin: 8px 0 4px; }
+.idea { margin: 0 0 4px; line-height: 1.4; }
+.itag { display: block; font-size: 12px; color: var(--muted); }
+.idea .itag { display: inline; margin-left: 8px; }
+.rolegrid { min-width: 900px; font-size: 14px; }
+.rolegrid th { font-size: 13px; vertical-align: bottom; }
+.rolegrid th.n, .rolegrid td.n { text-align: center; width: 64px; }
+.rolegrid td.n input { width: 22px; height: 22px; }
+.rolegrid th.sname, .rolegrid td.sname { min-width: 190px; }
+.rolegrid td.rem { min-width: 180px; }
+.rolegrid td textarea { min-height: 38px; padding: 4px 8px; font-size: 14px; }
+.rolegrid td.none { background: var(--soft); }
+.rolegrid td.n.off { background: var(--soft); }
+.rolegrid td.n input:disabled { opacity: .35; cursor: not-allowed; }
+.rolegrid th.sname, .rolegrid td.sname { position: sticky; left: 0; z-index: 1; background: var(--card); box-shadow: 1px 0 0 var(--line); }
+.rolegrid td.rem textarea { min-height: 36px; }
+@media (max-width: 520px) {
+  .rolegrid th.sname, .rolegrid td.sname { min-width: 118px; max-width: 140px; font-size: 13px; }
+  .s2cat { padding: 8px; }
+  .mixbox { margin-left: 0; padding: 6px 4px 6px 8px; }
+  .ck.opt { padding: 8px; gap: 8px; }
+}
+.mblock { margin: 0 0 18px; padding: 0 0 12px; border-bottom: 1px solid var(--line); }
+.mblock h4 { margin: 6px 0 8px; font-family: var(--serif); font-size: 19px; }
+.mblock .final { margin-top: 8px; display: grid; gap: 4px; max-width: 760px; }
+.mblock .final textarea { min-height: 52px; }
+.finalro { font-family: var(--serif); font-size: 17px; }
+body.proj .s2cat > b, body.proj .mblock h4 { font-size: 26px; }
+body.proj .optline, body.proj .idea { font-size: 20px; }
+body.proj .itag { font-size: 15px; }
+body.proj .finalro { font-size: 22px; }
 .mline2 { display: grid; grid-template-columns: 120px 1fr; gap: 10px; align-items: start; }
 @media (max-width: 520px) { .mline2 { grid-template-columns: 1fr; } .roles { padding-left: 0; } }
 

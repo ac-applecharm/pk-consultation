@@ -8,8 +8,9 @@
      A sheet with "view" is drawn by its own code in room.js (the starting elements, the table's choice, the test,
      the two merge grids, the indicator sheets).
    kind "link": opens an outside link.
-   The words of the Session 2 starting elements and of the pre-work indicator list are NOT here: they are
-   consultation content, kept in a private note and entered by staff into the staff sheets before the session. */
+   Session 2 (options by part, pre-work ideas, who does what) is built in below (decided 24 November).
+   The pre-work indicator list for Session 7 is NOT here: it is kept in a private note and entered by staff
+   into the staff sheets before Day 2. */
 window.PK_AGENDA = (function () {
   var TABLES = ["T1", "T2", "T3", "T4"];
   // the eight questions (Session 1 weights; Session 2 test)
@@ -47,7 +48,92 @@ window.PK_AGENDA = (function () {
     { id: "decide", label: "What still has to be decided" },
     { id: "who", label: "Who will implement" }];
 
-  var IND_INTRO = "For each component the plenary agreed in Session 6, write a specific indicator: what would show it is working, where it is measured, the data source, and who uses it to decide what. Include only indicators you consider feasible.";
+  // ---------- Session 2: one direction ----------
+  // What Options A to D propose for each part (deck v20261124B, "what the option proposes" slides).
+  var S2_OPTIONS = [["A", "Retain and refine"], ["B", "Consolidate into universal primary care"], ["C", "Community platform for Healthy Settings"], ["D", "NHETE-guided delivery for vulnerable populations"]];
+  // The pre-work themes (participant report v20261120D, Table 20: what people would take from each option).
+  var S2_THEMES = {
+    T: { name: "Targeting and prioritizing", n: 56, mostly: "D, A" },
+    U: { name: "Universal and accessible care", n: 44, mostly: "B, D" },
+    K: { name: "Continuity and strengthening of what exists", n: 39, mostly: "A" },
+    P: { name: "Health promotion and prevention", n: 34, mostly: "C" },
+    I: { name: "Integration into the regular system", n: 31, mostly: "B" },
+    M: { name: "Community and multisector participation", n: 34, mostly: "C" }
+  };
+  var S2_BASIS = "Pre-work ideas: from the 80 people who chose a mix of options (183 answers). One idea per line.";
+  // Each part: the four options, then the pre-work ideas one by one (sub: a small heading; th: the theme;
+  // lead: the start of the sentence the idea joins in the table's direction).
+  var S2_CATS = [
+    { id: "who", name: "Who and where", opts: {
+        A: "40% of barangays in 2026, 70% in 2027 and 90% in 2028; sites enter by written need criteria, focused on unserved and underserved areas.",
+        B: "Everyone, through YAKAP registration and empanelment; no separate list of PK barangays.",
+        C: "Barangays and puroks, as the community level of LGU-led Healthy Communities; a criterion sets which engage first.",
+        D: "NHETE communities with a proven access barrier; within them, people who cannot physically reach care, by explicit criteria." },
+      ideas: [
+        { id: "w1", sub: "Who gets priority", lead: "The new PK gives priority to", text: "vulnerable people", th: "T" },
+        { id: "w2", sub: "Who gets priority", lead: "The new PK gives priority to", text: "underserved people", th: "T" },
+        { id: "w3", sub: "Who gets priority", lead: "The new PK gives priority to", text: "far and hard-to-reach areas", th: "T" },
+        { id: "w4", sub: "Who is covered", lead: "Its services are open to", text: "everyone, whatever their income or location", th: "U" }] },
+    { id: "svc", name: "Services", opts: {
+        A: "Health promotion, first patient encounters and PhilHealth registration; nutrition and immunization, plus two locally chosen outcomes.",
+        B: "The YAKAP primary care package from provider networks; community work counts only through registration and empanelment.",
+        C: "Health promotion, early screening and the first step of referral, with partnerships with YAKAP and GAMOT providers.",
+        D: "Household or community services linked to primary care, while restoring facility access (transport, accompanied visits, telemedicine)." },
+      ideas: [
+        { id: "s1", sub: "What services it offers", lead: "It offers", text: "health education and awareness", th: "P" },
+        { id: "s2", sub: "What services it offers", lead: "It offers", text: "screening for early detection", th: "P" },
+        { id: "s3", sub: "What services it offers", lead: "It offers", text: "disease prevention", th: "P" },
+        { id: "s4", sub: "What services it offers", lead: "It offers", text: "the programs and services that already work", th: "K" },
+        { id: "s5", sub: "Where and when people get them", lead: "It provides its services", text: "close to where people live", th: "U" },
+        { id: "s6", sub: "Where and when people get them", lead: "It provides its services", text: "at times people can come", th: "U" },
+        { id: "s7", sub: "How they link to the rest of care", lead: "It works as", text: "a route to referral to higher levels of care", th: "I" },
+        { id: "s8", sub: "How they link to the rest of care", lead: "It works as", text: "a way to keep care continuous", th: "I" }] },
+    { id: "wf", name: "Workforce", opts: {
+        A: "A nurse or midwife, barangay health workers and nutrition scholars, with supervision and training.",
+        B: "Barangay health worker roles become routine functions of primary care provider networks, under network supervision.",
+        C: "PK teams and barangay health workers, alongside the programs and LGU structures that lead the agenda.",
+        D: "Barangay health workers within current scope (assessment, support, linkage), unless task-sharing widens it." },
+      ideas: [
+        { id: "f1", lead: "For its workforce, the new PK", text: "keeps the existing PK teams and networks", th: "K" },
+        { id: "f2", lead: "For its workforce, the new PK", text: "improves health worker training", th: "K" }] },
+    { id: "fin", name: "Financing", opts: {
+        A: "Existing LGU, bureau and program budgets first; then CHD savings, PhilHealth reimbursements and partners.",
+        B: "Money goes into facility readiness, staffing and removing fees, not into a separate community mechanism.",
+        C: "Not set out in the options brief; to be settled in the financing clinic (Session 6).",
+        D: "Equity weighting in LHSML grants, and financing for barangay health workers." },
+      ideas: [
+        { id: "n1", lead: "For financing, the new PK", text: "makes services affordable for the people served", th: "U" },
+        { id: "n2", lead: "For financing, the new PK", text: "improves supplies and equipment", th: "K" }] },
+    { id: "gov", name: "Governance", opts: {
+        A: "Site plan approved by the municipal or city health officer, attested by the DOH Representative; activities from a menu, recorded.",
+        B: "Primary care provider networks and Pillar 2 lines, including the Special Health Fund; no PK action plans.",
+        C: "Co-owned by HPB (lead for Pillar 1 settings) and BLHSD; LGUs, DILG and HPB lead recognition.",
+        D: "Pillar 2 Alternative Delivery Models; LGUs and CHDs set local targets against national criteria, with exit rules." },
+      ideas: [
+        { id: "g1", lead: "For governance, the new PK", text: "works as part of regular primary care (YAKAP), not a separate program", th: "I" }] },
+    { id: "data", name: "Data and monitoring", opts: {
+        A: "Annex B indicators, national dashboard, independent evaluation by 2028.",
+        B: "PK monitoring is retired; progress is tracked through YAKAP registration and empanelment.",
+        C: "Barangay reports feed the province or city self-assessment, not a parallel one.",
+        D: "Who is reached and who exits; referral completion; a comparison of barangays just above and below the NHETE cut-off." },
+      ideas: [
+        { id: "d1", lead: "For data and monitoring, the new PK", text: "finds the people to serve using NHETE", th: "T" },
+        { id: "d2", lead: "For data and monitoring, the new PK", text: "finds the people to serve using local data", th: "T" },
+        { id: "d3", lead: "For data and monitoring, the new PK", text: "improves monitoring and reporting", th: "K" }] }
+  ];
+  // Who does what: stakeholders as rows, roles as columns (plus No role and Remarks); tables may add rows.
+  var S2_STAKE_BASIS = "M";
+  var S2_STAKES = [
+    // written to follow "In each community, ..."; the grid shows them with a capital first letter
+    ["blgu", "the BLGU (barangay officials)"], ["bhw", "barangay health workers"], ["mlgu", "the municipal or city LGU"],
+    ["mho", "the municipal or city health office"], ["plgu", "the provincial LGU"], ["chd", "the CHD"], ["doh", "the DOH central office"],
+    ["phic", "PhilHealth"], ["pcpn", "primary care provider networks (YAKAP)"], ["dilg", "DILG"], ["sch", "schools and workplaces"],
+    ["cso", "civil society and partners"], ["res", "residents and families"]];
+  var S2_ROLES = [
+    ["plan", "plan"], ["lead", "lead"], ["fund", "fund"], ["deliver", "deliver services"], ["coord", "coordinate"],
+    ["promote", "promote health"], ["find", "find people who are missed"], ["monitor", "monitor and report"]];
+
+  var IND_INTRO ="For each component the plenary agreed in Session 6, write a specific indicator: what would show it is working, where it is measured, the data source, and who uses it to decide what. Include only indicators you consider feasible.";
 
   var ACTIVITIES = {
     // ---------- Day 1 ----------
@@ -64,17 +150,10 @@ window.PK_AGENDA = (function () {
     s1_vote: { title: "Vote: which weights?", kind: "form", items: [
       { id: "weights", label: "Which weights should the room use?", type: "single", options: [["prework", "The weights from the pre-work ranking"], ["equal", "Equal weights"]] }] },
 
-    s2_start: { title: "The starting elements", kind: "sheet", sheets: ["ROOM"], staffOnly: true, view: "start", importable: true,
-      intro: "From the pre-work: what people would take from each option (80 people who chose a mix, 183 answers). Each row is one idea. Staff enter or paste these before the session.",
-      sections: [
-        { id: "e", title: "Elements (one idea each)", type: "rows", add: "Add an element", cols: [
-          { id: "theme", label: "Theme and pre-work basis" }, { id: "phrase", label: "Connecting phrase" }, { id: "element", label: "Element" }] },
-        { id: "s", title: "Stakeholders", type: "rows", add: "Add a stakeholder", cols: [{ id: "name", label: "Stakeholder" }] },
-        { id: "r", title: "Role options (the same for every stakeholder)", type: "rows", add: "Add a role", cols: [{ id: "role", label: "Role" }] },
-        { id: "m", title: "Stakeholder section heading", type: "fields", fields: [
-          { id: "theme", label: "Theme and pre-work basis for the stakeholder roles" }] }] },
-    s2_choose: { title: "Choose your table's elements", kind: "sheet", sheets: TABLES, view: "choose",
-      intro: "Tick every element your table wants in the new PK. Add your own under any sentence. Your table's direction is written below as you tick." },
+    s2_start: { title: "The starting elements", kind: "sheet", sheets: ["ROOM"], staffOnly: true, view: "start",
+      intro: "For each part of the new PK: what Options A to D propose, and the single ideas people would take from the options in the pre-work. Built into the page; nothing to enter." },
+    s2_choose: { title: "Choose your table's direction", kind: "sheet", sheets: TABLES, view: "choose",
+      intro: "For each part, choose one option, or make a mix from the pre-work ideas and your own. Then mark who does what. Your table's direction is written below as you choose." },
     s2_test: { title: "Test your direction on the eight questions", kind: "sheet", sheets: TABLES, view: "test",
       intro: "Score your table's direction from 1 to 5 on each question, where 5 is strongest, with a one-line reason." },
     s2_merge: { title: "The one direction (merge)", kind: "sheet", sheets: ["ROOM"], staffOnly: true, view: "merge2",
@@ -198,9 +277,9 @@ window.PK_AGENDA = (function () {
       { id: "s1_1", session: "Session 1: the eight questions and the weights", title: "1.1 Accept the weights?", acts: ["s1_weights"] },
       { id: "s1_2", session: "Session 1: the eight questions and the weights", title: "1.2 Vote on the weights (if contested)", acts: ["s1_vote"], optional: true },
       { id: "s2_1", session: "Session 2: one direction", title: "2.1 The starting elements", shown: ["s2_start"] },
-      { id: "s2_2", session: "Session 2: one direction", title: "2.2 Choose your table's elements", acts: ["s2_choose"], reveal: ["s2_start"] },
-      { id: "s2_3", session: "Session 2: one direction", title: "2.3 Test your direction", acts: ["s2_test"], reveal: ["s2_start"] },
-      { id: "s2_m", session: "Session 2: one direction", title: "Merge: the one direction", shown: ["s2_merge"], reveal: ["s2_start", "s2_choose"] },
+      { id: "s2_2", session: "Session 2: one direction", title: "2.2 Choose your table's direction", acts: ["s2_choose"] },
+      { id: "s2_3", session: "Session 2: one direction", title: "2.3 Test your direction", acts: ["s2_test"] },
+      { id: "s2_m", session: "Session 2: one direction", title: "Merge: the one direction", shown: ["s2_merge"], reveal: ["s2_choose"] },
       { id: "s2_4", session: "Session 2: one direction", title: "2.4 Agreement check (only if needed)", acts: ["s2_agree"], optional: true, reveal: ["s2_merge"] },
       { id: "s3_1", session: "Session 3: models, core and adaptable elements", title: "3.1 What can be carried over", acts: ["s3_carry"] },
       { id: "s3_2", session: "Session 3: models, core and adaptable elements", title: "3.2 Elements the pre-work settles", acts: ["s3_settled"] },
@@ -217,7 +296,7 @@ window.PK_AGENDA = (function () {
     ] }
   ];
   // staff sheets kept on the Registers tab
-  var REGISTERS = ["s2_start", "ref_ind", "s2_merge", "s6_merge", "results_contest", "design_questions"];
+  var REGISTERS = ["ref_ind", "s2_merge", "s6_merge", "results_contest", "design_questions"];
 
   // D11, the one-page table guide, shown on every phone
   var GUIDE = [
@@ -227,5 +306,6 @@ window.PK_AGENDA = (function () {
     ["Counts and confidentiality", "The pre-work results are counts for combined groups. Do not try to work out who answered what."]
   ];
 
-  return { activities: ACTIVITIES, slides: SLIDES, registers: REGISTERS, crit: CRIT, regions: REGIONS, nat: NAT, routes: ROUTES, levels: LEVELS, guide: GUIDE };
+  return { activities: ACTIVITIES, slides: SLIDES, registers: REGISTERS, crit: CRIT, regions: REGIONS, nat: NAT, routes: ROUTES, levels: LEVELS, guide: GUIDE,
+    s2: { options: S2_OPTIONS, themes: S2_THEMES, cats: S2_CATS, stakes: S2_STAKES, roles: S2_ROLES, basis: S2_BASIS, stakeBasis: S2_STAKE_BASIS } };
 })();
