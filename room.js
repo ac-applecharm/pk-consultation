@@ -87,6 +87,7 @@
   function actState(key) { return (S.st && S.st.acts && S.st.acts[key]) || "none"; }
   function pollMs() { var n = +(S.st && S.st.settings && S.st.settings.poll_ms) || 5000; return Math.max(2000, Math.min(30000, n)); }
   function setting(k) { return S.st && S.st.settings ? S.st.settings[k] : undefined; }
+  function joinCode() { var c = setting("join_code"); return typeof c === "string" && /^[A-Z0-9-]{3,40}$/.test(c) ? c : ""; }
   function evalUrl() { var u = setting("eval_url"); return typeof u === "string" && /^https:\/\/[^\s]+$/i.test(u) ? u : ""; }
   function isStaff() { return S.role === "staff"; }
   function isProj() { return S.role === "projector"; }
@@ -221,6 +222,7 @@
     box.appendChild(el("div", { class: "q" }, el("span", { class: "t", text: "Your table" }),
       radioGroup("tbl", [[1, "Table 1"], [2, "Table 2"], [3, "Table 3"], [4, "Table 4"]].map(function (x) { return [String(x[0]), x[1]]; }), v.table ? String(v.table) : null, function (x) { v.table = +x; })));
     box.appendChild(el("div", { class: "q" }, el("span", { class: "t", text: "Your group" }),
+      el("p", { class: "help", text: "Development partners: choose National level." }),
       radioGroup("grp", GROUPS.map(function (g) { return [g, g]; }), v.grp, function (x) { v.grp = x; })));
     box.appendChild(el("div", { class: "q" }, el("span", { class: "t", text: "Did you finish the online pre-work?" }), el("p", { class: "help", text: "Only a count is kept. It is not linked to your answers." }),
       radioGroup("pw", [["yes", "Yes"], ["no", "No"], ["skip", "I prefer not to say"]], v.prework === true ? "yes" : v.prework === false ? "no" : v.prework === null ? "skip" : null, function (x) { v.prework = x === "yes" ? true : x === "no" ? false : null; })));
@@ -272,6 +274,13 @@
     $("gate").hidden = true; $("app").hidden = false; S.running = true;
     document.body.classList.toggle("proj", isProj());
     $("roleChip").hidden = false; $("menuBtn").hidden = false;
+    if (S.role === "participant") {
+      var chip = $("roleChip");
+      chip.classList.add("chipbtn"); chip.setAttribute("role", "button"); chip.setAttribute("tabindex", "0");
+      chip.setAttribute("aria-label", "Your table and group: show or change");
+      chip.addEventListener("click", function (e) { e.stopPropagation(); toggleCheckin(); });
+      chip.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleCheckin(); } });
+    }
     S.mine = {}; loadQueue(); loadSheetQueue(); S.ver = null;
     if (Object.keys(S.sq).length) setTimeout(flushSheets, 1500);
     buildTabs();
@@ -511,6 +520,30 @@
       node.addEventListener("change", function () { queueCell(act, sheet, k, node.checked); });
       return node;
     }
+    if (col.type === "multidrop") {
+      var picked = Array.isArray(value) ? value.slice() : [];
+      var shortOf = function (o) { return String(o).split(":")[0]; };
+      if (!editable) return el("div", { class: "cellro", text: picked.join("; ") });
+      var sum = el("summary", { text: picked.length ? picked.map(shortOf).join(", ") : "Choose" });
+      var dd = el("details", { class: "mdrop" }, sum), list = el("div", { class: "mdlist" });
+      // stays open when the sheet redraws after a save, until the person closes it
+      var dk = q + "#" + k;
+      if (S.openDrop === dk) dd.open = true;
+      sum.addEventListener("click", function () { S.openDrop = dd.open ? null : dk; });
+      col.options.forEach(function (o) {
+        var cb = el("input", { type: "checkbox", checked: picked.indexOf(o) >= 0 });
+        cb.addEventListener("change", function () {
+          var now = Array.isArray(sheetBody(act, sheet)[k]) ? sheetBody(act, sheet)[k].slice() : picked.slice();
+          var i = now.indexOf(o); if (cb.checked && i < 0) now.push(o); if (!cb.checked && i >= 0) now.splice(i, 1);
+          now.sort(function (a, b) { return col.options.indexOf(a) - col.options.indexOf(b); });
+          picked = now; queueCell(act, sheet, k, now);
+          sum.textContent = now.length ? now.map(shortOf).join(", ") : "Choose";
+        });
+        list.appendChild(el("label", null, cb, el("span", { text: o })));
+      });
+      dd.appendChild(list);
+      return dd;
+    }
     if (col.type === "multi") {
       var cur = Array.isArray(value) ? value.slice() : [];
       if (!editable) return el("div", { class: "cellro", text: cur.join(", ") });
@@ -541,18 +574,49 @@
   }
   // the sections of a sheet; the Session 7 indicator sheets build theirs from what Session 6 agreed
   var IND_COLS = [
-    { id: "indicator", label: "What would show it is working (the indicator)" },
-    { id: "level", label: "Level where it is measured", type: "multi", options: AG.levels },
+    { id: "indicator", label: "What would show that the “how” is working?" },
+    { id: "calc", label: "How do we calculate or determine success? (for example, number of … divided by …)" },
+    { id: "level", label: "Level where it is measured", type: "multidrop", options: AG.levels },
     { id: "source", label: "Data source" },
-    { id: "use", label: "Who uses it, to decide what" }];
+    { id: "use", label: "Who uses this indicator, and to decide what?" }];
   function agreedFor(clinicSheet) { var a = sheetBody("s6_merge", "ROOM")["agreed." + clinicSheet]; return Array.isArray(a) ? a : []; }
   function sectionsFor(act, def) {
     if (def.view !== "ind") return def.sections || [];
     var secs = agreedFor(def.from).map(function (c) {
-      return { id: "k" + fnv(c.key), title: c.topic, note: [["Guide question", c.q], ["Agreed how", c.how], ["Who will implement", c.who]], type: "rows", add: "Add another indicator", preset: [""], presetCol: "indicator", cols: IND_COLS };
+      return { id: "k" + fnv(c.key), title: c.topic, note: [["Guide question", c.q], ["Agreed how", c.how], ["Who will implement", c.who]], type: "rows", layout: "table", add: "Add another indicator", preset: [""], presetCol: "indicator", cols: IND_COLS };
     });
-    secs.push({ id: "add", title: "Components the clinic adds", type: "rows", add: "Add a component", cols: [{ id: "component", label: "Component" }].concat(IND_COLS) });
+    secs.push({ id: "add", title: "Components the clinic adds", type: "rows", layout: "table", add: "Add a component", cols: [{ id: "component", label: "Component" }].concat(IND_COLS) });
     return secs;
+  }
+  // a rows section drawn as a table: one header row of column labels, one row per entry; scrolls sideways on phones
+  function rowsTable(act, sheet, sec, body, editable, v) {
+    var ids = rowIds(sec, body), wrap = el("div");
+    var tb = el("table", { class: "restable rolegrid sheetgrid" }), hd = el("tr");
+    sec.cols.forEach(function (col, i) { hd.appendChild(el("th", { class: i === 0 ? "sname" : null, text: col.label })); });
+    if (editable && sec.add) hd.appendChild(el("th", { text: "" }));
+    tb.appendChild(hd);
+    ids.forEach(function (rowId) {
+      var tr = el("tr"), preset = /^p\d+$/.test(rowId);
+      sec.cols.forEach(function (col, i) {
+        var k = sec.id + "." + rowId + "." + col.id, val = cellVal(body, sec, rowId, col), td = el("td", { class: i === 0 ? "sname" : null });
+        // a preset element name is a label, not an answer
+        if (preset && sec.presetCol === col.id && val && body[k] == null) td.appendChild(el("b", { text: val }));
+        else td.appendChild(input(act, sheet, k, val, col, editable));
+        tr.appendChild(td);
+      });
+      if (editable && sec.add) tr.appendChild(el("td", null, !preset ? el("button", { type: "button", class: "linkbtn", text: "Remove", onclick: function () {
+        if (!confirm("Remove this row?")) return;
+        queueRow(act, sheet, sec.id, "del", rowId); if (v) v.redraw();
+      } }) : null));
+      if (!editable && !preset && sec.cols.every(function (col) { var x = cellVal(body, sec, rowId, col); return !x || (Array.isArray(x) && !x.length); })) return;
+      tb.appendChild(tr);
+    });
+    if (ids.length) wrap.appendChild(el("div", { class: "mscroll" }, tb));
+    else wrap.appendChild(el("p", { class: "muted small", text: "No rows yet." }));
+    if (editable && sec.add) wrap.appendChild(el("button", { type: "button", class: "btn ghost small", text: "+ " + sec.add, onclick: function () {
+      queueRow(act, sheet, sec.id, "add", rid()); if (v) v.redraw();
+    } }));
+    return wrap;
   }
   function sheetView(act, def, sheet, editable, v) {
     var body = sheetBody(act, sheet), wrap = el("div", { class: "sheet" });
@@ -565,7 +629,8 @@
       var box = el("section", { class: "ssec" }, el("h4", { text: sec.title }));
       if (sec.note) box.appendChild(el("div", { class: "snote" }, sec.note.filter(function (n) { return n[1]; }).map(function (n) { return el("div", null, el("span", { class: "slab", text: n[0] }), el("div", { text: n[1] })); })));
       if (sec.help) box.appendChild(el("p", { class: "help", text: sec.help }));
-      if (sec.type === "rows") {
+      if (sec.type === "rows" && sec.layout === "table") box.appendChild(rowsTable(act, sheet, sec, body, editable, v));
+      else if (sec.type === "rows") {
         var ids = rowIds(sec, body);
         ids.forEach(function (rowId, i) {
           var card = el("div", { class: "srow" });
@@ -601,7 +666,7 @@
   // which view draws a sheet, and which other sheets it reads
   function depsOf(act) {
     var def = ACT[act] || {};
-    return [act].concat({ test: ["s2_choose"], merge2: ["s2_choose"], merge6: ["c6_1", "c6_2", "c6_3"], ind: ["s6_merge", "ref_ind"] }[def.view] || [],
+    return [act].concat({ test: ["s2_choose"], merge2: ["s2_choose"], merge6: ["c6_1", "c6_2", "c6_3"], merge7: ["c7_1", "c7_2", "c7_3", "s6_merge"], ind: ["s6_merge", "ref_ind"] }[def.view] || [],
       def.showDirection ? ["s2_merge"] : []);
   }
   function viewFor(act, sheet, editable, v) {
@@ -611,6 +676,7 @@
     if (def.view === "test") return testView(sheet, editable, v);
     if (def.view === "merge2") return merge2View(editable, v);
     if (def.view === "merge6") return merge6View(editable, v);
+    if (def.view === "merge7") return merge7View(editable, v);
     if (def.view === "refind" && !editable) return refPanel(true);
     return sheetView(act, def, sheet, editable, v);
   }
@@ -1007,19 +1073,87 @@
           }
           var ans = el("td", { class: "small" }, r.how ? el("div", null, el("b", { text: "How: " }), r.how) : el("div", { class: "muted", text: "No answer" }),
             r.decide ? el("div", null, el("b", { text: "Still to decide: " }), r.decide) : null, r.who ? el("div", null, el("b", { text: "Who: " }), r.who) : null);
-          var acts = el("div", { class: "row tight" },
-            r.how ? el("button", { type: "button", class: "linkbtn", text: "Copy the how", onclick: function () { save(hk, r.how); if (v) v.redraw(); } }) : null,
-            r.who ? el("button", { type: "button", class: "linkbtn", text: "Copy the who", onclick: function () { save(wk, r.who); if (v) v.redraw(); } }) : null,
-            el("button", { type: "button", class: "linkbtn", text: "Push to poll", onclick: function () { S.pollDraft = r.key; if (v) v.redraw(); } }));
-          var fin = el("td", { class: "final" }, ta(hk, "Agreed how"), acts);
-          if (S.pollDraft === r.key) fin.appendChild(pollDraftForm("Agree: " + (r.how || r.q) + "?", ["Agree", "Change it", "Leave out"], v));
-          tb.appendChild(el("tr", null, el("td", { class: "small" }, r.added ? el("span", { class: "muted", text: "Added: " }) : null, r.q || ""), ans, fin, el("td", { class: "final" }, ta(wk, "Agreed: who will implement"))));
+          // each agreed column has its own Copy and Push to poll
+          function finCol(k, label, copyText, copyLabel, pollKey, pollQ) {
+            var td = el("td", { class: "final" }, ta(k, label), el("div", { class: "row tight" },
+              copyText ? el("button", { type: "button", class: "linkbtn", text: copyLabel, onclick: function () { save(k, copyText); if (v) v.redraw(); } }) : null,
+              el("button", { type: "button", class: "linkbtn", text: "Push to poll", onclick: function () { S.pollDraft = pollKey; if (v) v.redraw(); } })));
+            if (S.pollDraft === pollKey) td.appendChild(pollDraftForm(pollQ(), ["Agree", "Change it", "Leave out"], v));
+            return td;
+          }
+          var mbNow = function () { return sheetBody("s6_merge", "ROOM"); };
+          var finH = finCol(hk, "Agreed how", r.how, "Copy the how", r.key + "~h", function () { return "Agree: " + (clean(mbNow()[hk]) || r.how || r.q) + "?"; });
+          var finW = finCol(wk, "Agreed: who will implement", r.who, "Copy the who", r.key + "~w", function () { return "Agree that " + (clean(mbNow()[wk]) || r.who || "\u2026") + " will implement this: " + (clean(mbNow()[hk]) || r.q || r.topic) + "?"; });
+          tb.appendChild(el("tr", null, el("td", { class: "small" }, r.added ? el("span", { class: "muted", text: "Added: " }) : null, r.q || ""), ans, finH, finW));
         });
         sec.appendChild(el("div", { class: "mscroll" }, tb));
       }
       var ag = agreedList(c, mb);
       sec.appendChild(el("div", { class: "statement" }, el("div", { class: "slab", text: c.title.split(":")[0] + ": agreed components" }),
         ag.length ? el("ol", null, ag.map(function (a) { return el("li", null, el("b", { text: a.topic + ": " }), a.how, a.who ? el("span", { class: "muted", text: " (who: " + a.who + ")" }) : null); })) : el("p", { class: "muted", text: "None recorded yet." })));
+      box.appendChild(sec);
+    });
+    return box;
+  }
+  // ----- 7.2: the indicators each clinic proposed, and what the plenary agreed -----
+  function indRows(n) {
+    var act = "c7_" + n, def = ACT[act], sh = def.sheets[0], b = sheetBody(act, sh), rows = [];
+    sectionsFor(act, def).forEach(function (sec) {
+      rowIds(sec, b).forEach(function (r) {
+        var g = function (id) { var x = cellVal(b, sec, r, { id: id }); return Array.isArray(x) ? x.join(", ") : clean(x); };
+        var row = { key: sh + "_" + sec.id + "_" + r, comp: sec.id === "add" ? (g("component") || "Added by the clinic") : sec.title,
+          ind: g("indicator"), calc: g("calc"), level: g("level"), source: g("source"), use: g("use") };
+        if (row.ind || row.calc) rows.push(row);
+      });
+    });
+    return { sheet: sh, title: def.title, rows: rows };
+  }
+  function agreedInd(c, mb) {
+    return c.rows.map(function (r) { return { comp: r.comp, ind: clean(mb["fi." + r.key]), calc: clean(mb["fc." + r.key]), lsu: clean(mb["fl." + r.key]) }; }).filter(function (x) { return x.ind; });
+  }
+  function agreedIndBox(c, ag) {
+    return el("div", { class: "statement" }, el("div", { class: "slab", text: c.title.split(":")[0] + ": agreed indicators" }),
+      ag.length ? el("ol", null, ag.map(function (a) { return el("li", null, el("b", { text: a.comp + ": " }), a.ind, a.calc ? el("span", { class: "muted", text: " (" + a.calc + ")" }) : null, a.lsu ? el("div", { class: "muted small", text: a.lsu }) : null); }))
+        : el("p", { class: "muted", text: "None recorded yet." }));
+  }
+  function merge7View(editable, v) {
+    var mb = sheetBody("s7_merge", "ROOM"), q = sheetKey("s7_merge", "ROOM"), box = el("div", { class: "merge" });
+    [1, 2, 3].forEach(function (n) {
+      var c = indRows(n), sec = el("section", { class: "mblock" }, el("h4", { text: c.title }));
+      function save(k, val) { queueCell("s7_merge", "ROOM", k, val); }
+      function ta(k, label) {
+        if (!editable) return el("div", { class: "finalro" + (clean(mb[k]) ? "" : " muted"), text: clean(mb[k]) || "\u2014" });
+        var t = el("textarea", { "data-k": k, "data-q": q, rows: "2", value: mb[k] || "", "aria-label": label }), tm;
+        t.addEventListener("input", function () { clearTimeout(tm); tm = setTimeout(function () { save(k, t.value); }, 600); });
+        t.addEventListener("blur", function () { clearTimeout(tm); if ((sheetBody("s7_merge", "ROOM")[k] || "") !== t.value) save(k, t.value); if (v) v.redraw(); });
+        return t;
+      }
+      if (!c.rows.length) { sec.appendChild(el("p", { class: "muted", text: "No indicators from this clinic yet." })); box.appendChild(sec); return; }
+      var tb = el("table", { class: "restable mtable" }, el("tr", null, el("th", { text: "Component and proposed indicator" }), el("th", { class: "final", text: "Agreed indicator" }), el("th", { class: "final", text: "Agreed calculation" }), el("th", { class: "final", text: "Agreed level, data source and user" })));
+      var lastC = null;
+      c.rows.forEach(function (r) {
+        if (r.comp !== lastC) { tb.appendChild(el("tr", { class: "mhead" }, el("td", { colspan: "4" }, el("b", { text: r.comp })))); lastC = r.comp; }
+        var lsu = [r.level ? "Level: " + r.level : "", r.source ? "Source: " + r.source : "", r.use ? "Used by: " + r.use : ""].filter(Boolean).join(". ");
+        var prop = el("td", { class: "small" }, el("div", null, el("b", { text: "Indicator: " }), r.ind || "\u2014"), r.calc ? el("div", null, el("b", { text: "Calculation: " }), r.calc) : null,
+          r.level ? el("div", null, el("b", { text: "Level: " }), r.level) : null, r.source ? el("div", null, el("b", { text: "Data source: " }), r.source) : null, r.use ? el("div", null, el("b", { text: "Who uses it: " }), r.use) : null);
+        var now = function (k, dflt) { return clean(sheetBody("s7_merge", "ROOM")[k]) || dflt; };
+        function col(k, label, copyText, pollKey, pollQ) {
+          var td = el("td", { class: "final" }, ta(k, label));
+          if (editable) {
+            td.appendChild(el("div", { class: "row tight" },
+              copyText ? el("button", { type: "button", class: "linkbtn", text: "Copy", onclick: function () { save(k, copyText); if (v) v.redraw(); } }) : null,
+              el("button", { type: "button", class: "linkbtn", text: "Push to poll", onclick: function () { S.pollDraft = pollKey; if (v) v.redraw(); } })));
+            if (S.pollDraft === pollKey) td.appendChild(pollDraftForm(pollQ(), ["Agree", "Change it", "Leave out"], v));
+          }
+          return td;
+        }
+        tb.appendChild(el("tr", null, prop,
+          col("fi." + r.key, "Agreed indicator", r.ind, r.key + "~i", function () { return "Agree on this indicator for " + lowFirst(r.comp) + ": " + now("fi." + r.key, r.ind) + "?"; }),
+          col("fc." + r.key, "Agreed calculation", r.calc, r.key + "~c", function () { return "Agree on this calculation: " + now("fc." + r.key, r.calc || "\u2026") + "?"; }),
+          col("fl." + r.key, "Agreed level, data source and user", lsu, r.key + "~l", function () { return "Agree: " + now("fl." + r.key, lsu || "\u2026") + "?"; })));
+      });
+      sec.appendChild(el("div", { class: "mscroll" }, tb));
+      sec.appendChild(agreedIndBox(c, agreedInd(c, mb)));
       box.appendChild(sec);
     });
     return box;
@@ -1160,19 +1294,22 @@
       }
     }
     if (!any) view.appendChild(waitCard());
-    view.appendChild(el("details", { class: "apanel locked small guide" }, el("summary", { text: "Table guide (D11)" }),
-      AG.guide.map(function (g) { return el("div", null, el("b", { text: g[0] }), el("p", { text: g[1] })); })));
-    view.appendChild(checkinPanel());
   }
   function render2() { S.sig = ""; renderPart(true); window.scrollTo(0, 0); }
   // a staff sheet shown on this slide (read-only on phones)
   function shownPanel(k) {
     var def = ACT[k], box = el("section", { class: "apanel locked" }, el("h3", { text: def.title }));
-    if (def.view === "merge2") box.appendChild(liveView({ deps: ["s2_merge"], draw: function () { return statementBox("The one direction so far", directionText(), "Staff are recording what the tables agreed."); } }));
+    if (def.view === "merge2") {
+      box.appendChild(el("p", { class: "help", text: "Follow the merge live: staff are recording what the tables agreed." }));
+      box.appendChild(liveView({ deps: ["s2_merge", "s2_choose"], draw: function () { return merge2View(false); } }));
+    }
     else if (def.view === "merge6") box.appendChild(liveView({ deps: ["s6_merge"], draw: function () {
       var w = el("div");
       [1, 2, 3].forEach(function (n) { var sh = "C" + n, ag = agreedFor(sh); w.appendChild(el("div", { class: "statement" }, el("div", { class: "slab", text: SHEET_NAMES[sh] + ": agreed components" }), ag.length ? el("ol", null, ag.map(function (a) { return el("li", null, el("b", { text: a.topic + ": " }), a.how); })) : el("p", { class: "muted", text: "None recorded yet." }))); });
       return w;
+    } }));
+    else if (def.view === "merge7") box.appendChild(liveView({ deps: depsOf(k), draw: function () {
+      var w = el("div"); [1, 2, 3].forEach(function (n) { var c = indRows(n); w.appendChild(agreedIndBox(c, agreedInd(c, sheetBody("s7_merge", "ROOM")))); }); return w;
     } }));
     else box.appendChild(liveView({ deps: [k], draw: function () { return viewFor(k, "ROOM", false); } }));
     return box;
@@ -1293,12 +1430,20 @@
     update(false);
     return box;
   }
+  // the check-in details open from the table chip in the header
+  function toggleCheckin() {
+    var old = document.querySelector(".chippanel"); if (old) { old.remove(); return; }
+    var m = document.querySelector(".menu"); if (m) m.remove();
+    var panel = el("div", { class: "menu chippanel", role: "dialog", "aria-label": "You are checked in" }, checkinPanel());
+    panel.addEventListener("click", function (e) { e.stopPropagation(); });
+    document.body.appendChild(panel);
+  }
   function checkinPanel() {
     var p = S.profile, box = el("section", { class: "apanel locked small" }, el("h3", { text: "You are checked in" }));
     box.appendChild(el("p", { style: "margin:0 0 10px", text: "Table " + p.table + " · " + p.grp + " · Pre-work: " + (p.prework === true ? "yes" : p.prework === false ? "no" : "not stated") }));
     box.appendChild(el("button", { type: "button", class: "btn ghost small", text: "Change this", onclick: function () {
       var holder = el("div"); box.appendChild(holder);
-      profileForm(p, function (prof) { joinCall(prof).then(function (r) { if (r.ok) { S.profile = { session: S.session, grp: prof.grp, table: prof.table, prework: prof.prework }; lsSet(profileKey(S.code), S.profile); ssSet("pk_room_ps", JSON.stringify(S.profile)); updateLive(); render2(); toast("Saved."); } }); }, holder);
+      profileForm(p, function (prof) { joinCall(prof).then(function (r) { if (r.ok) { S.profile = { session: S.session, grp: prof.grp, table: prof.table, prework: prof.prework }; lsSet(profileKey(S.code), S.profile); ssSet("pk_room_ps", JSON.stringify(S.profile)); var cp = document.querySelector(".chippanel"); if (cp) cp.remove(); updateLive(); render2(); toast("Saved."); } }); }, holder);
     } }));
     return box;
   }
@@ -1368,11 +1513,38 @@
     });
     return box;
   }
+  // the join drawer on the room screen: a tab on the right edge slides out the QR code of the room page
+  // and the participant code typed in Settings. It lives outside the redrawn view, so it stays as it is between slides.
+  function joinDrawer() {
+    var d = $("joinDrawer"), code = joinCode();
+    if (!d) {
+      var open = lsGet("pk_room_join_open") === true;
+      d = el("aside", { id: "joinDrawer", class: "joindrawer" + (open ? " open" : ""), "aria-label": "Join on your phone" });
+      var setOpen = function (on) {
+        d.classList.toggle("open", on); lsSet("pk_room_join_open", on);
+        tab.setAttribute("aria-expanded", on ? "true" : "false");
+      };
+      var tab = el("button", { type: "button", class: "jtab", "aria-expanded": open ? "true" : "false", "aria-controls": "joinPanel", onclick: function () { setOpen(!d.classList.contains("open")); } },
+        el("span", { class: "jarrow", "aria-hidden": "true", text: "\u25C2" }), el("span", { class: "jtabtext", text: "Join" }));
+      var img = el("img", { src: "join-qr.png", alt: "QR code: open the room page on your phone", width: "260", height: "260" });
+      img.addEventListener("error", function () { img.remove(); });
+      var panel = el("div", { id: "joinPanel", class: "jpanel" },
+        el("button", { type: "button", class: "jclose", "aria-label": "Close", text: "\u00D7", onclick: function () { setOpen(false); } }),
+        el("div", { class: "jlab", text: "Join on your phone" }), img,
+        el("div", { class: "jurl", text: location.host + location.pathname }),
+        el("div", { class: "jlab jcodelab", text: "Access code" }), el("div", { class: "jcode" }));
+      d.appendChild(tab); d.appendChild(panel);
+      document.body.appendChild(d);
+    }
+    d.querySelector(".jcode").textContent = code;
+    d.querySelector(".jcode").hidden = !code; d.querySelector(".jcodelab").hidden = !code;
+  }
   function renderProj() {
-    var s = curSlide(), sig = [s ? s.id : "wait", partSig(), JSON.stringify(setting("d2_weights") || {})].join("#");
+    var s = curSlide(), sig = [s ? s.id : "wait", partSig(), JSON.stringify(setting("d2_weights") || {}), joinCode()].join("#");
     if (sig === S.sig) return;
     S.sig = sig;
     var view = resetView();
+    joinDrawer();
     if (!s || (!slideActs(s).length && !(s.shown || []).length)) { view.appendChild(el("div", { class: "standby", text: "PuroKalusugan · Direction Consultation" })); return; }
     var card = el("article", { class: "pcard" });
     card.appendChild(el("div", { class: "pkick", text: s.dayName.split(" · ")[0] + " · " + s.session }));
@@ -1380,6 +1552,7 @@
     (s.shown || []).forEach(function (k) {
       if (ACT[k].view === "merge2") card.appendChild(liveView({ deps: depsOf(k).concat(["s2_merge"]), draw: function () { return merge2View(false); } }));
       else if (ACT[k].view === "merge6") card.appendChild(liveView({ deps: depsOf(k).concat(["s6_merge"]), draw: function () { return merge6View(false); } }));
+      else if (ACT[k].view === "merge7") card.appendChild(liveView({ deps: depsOf(k), draw: function () { return merge7View(false); } }));
       else card.appendChild(liveView({ deps: [k], draw: function () { return viewFor(k, "ROOM", false); } }));
     });
     var acts = slideActs(s), sheets = sheetActsOf(s);
@@ -1527,7 +1700,7 @@
     (s.shown || []).forEach(function (k) {
       var def = ACT[k];
       if (def.view !== "start") box.appendChild(el("p", { class: "muted small", text: def.intro || "" }));
-      if (def.view === "merge2" || def.view === "merge6") box.appendChild(sheetLive(k, "ROOM", true));
+      if (def.view === "merge2" || def.view === "merge6" || def.view === "merge7") box.appendChild(sheetLive(k, "ROOM", true));
       else { box.appendChild(sheetLive(k, "ROOM", false)); if (def.view !== "start") box.appendChild(el("p", { class: "muted small", text: "Edit it on the Staff sheets tab." })); }
     });
     var sheets = sheetActsOf(s);
@@ -1679,12 +1852,15 @@
     var poll = el("select", { "aria-label": "How often devices check for changes" }, [[3000, "Every 3 seconds"], [5000, "Every 5 seconds (default)"], [8000, "Every 8 seconds"], [12000, "Every 12 seconds"], [20000, "Every 20 seconds"]]
       .map(function (o) { return el("option", { value: String(o[0]), selected: pollMs() === o[0], text: o[1] }); }));
     var url = el("input", { type: "text", value: evalUrl(), placeholder: "https://...", "aria-label": "Evaluation link" });
+    var jc = el("input", { type: "text", value: joinCode(), placeholder: "PK-XXXX-XXXX", maxlength: "40", autocapitalize: "characters", "aria-label": "Participant code shown on the room screen" });
     c.appendChild(el("div", { class: "q" }, el("span", { class: "t", text: "How often devices check for changes" }), el("p", { class: "help", text: "Slower saves data on the free plan. Use 8 seconds or more if the usage page shows a high count." }), poll));
     c.appendChild(el("div", { class: "q" }, el("span", { class: "t", text: "Evaluation link (optional)" }), el("p", { class: "help", text: "The link your team provides. Phones show an Open button on the Evaluation slide. This link and the polling speed are shared with the " + (S.stage === "trial" ? "live" : "trial") + " room." }), url));
+    c.appendChild(el("div", { class: "q" }, el("span", { class: "t", text: "Participant code shown on the room screen (optional)" }), el("p", { class: "help", text: "Type the participant code of this " + (S.stage === "trial" ? "trial" : "live") + " room. The room screen shows it under the join QR code. The other room keeps its own." }), jc));
     c.appendChild(el("button", { type: "button", class: "btn", text: "Save settings", onclick: function () {
-      var u = url.value.trim();
+      var u = url.value.trim(), code = jc.value.trim().toUpperCase();
       if (u && !/^https:\/\/[^\s]+$/i.test(u)) { msg(out, "The evaluation link must start with https://", "err"); return; }
-      staffSet({ settings: { poll_ms: +poll.value, eval_url: u } }).then(function () { msg(out, "Saved.", "ok"); });
+      if (code && !/^[A-Z0-9-]{3,40}$/.test(code)) { msg(out, "The code can only have letters, numbers and dashes.", "err"); return; }
+      staffSet({ settings: { poll_ms: +poll.value, eval_url: u, join_code: code } }).then(function () { msg(out, "Saved.", "ok"); });
     } }));
     c.appendChild(out);
     c.appendChild(el("hr", { class: "hr" }));
@@ -1725,13 +1901,13 @@
     $("code").addEventListener("keydown", function (e) { if (e.key === "Enter") gateGo(); });
     $("menuBtn").addEventListener("click", function (e) {
       e.stopPropagation();
-      var old = document.querySelector(".menu"); if (old) { old.remove(); return; }
+      var old = document.querySelector(".menu:not(.chippanel)"), cp = document.querySelector(".chippanel"); if (cp) cp.remove(); if (old) { old.remove(); return; }
       var m = el("div", { class: "menu", role: "menu" });
       if (S.role === "participant") m.appendChild(el("button", { type: "button", text: "Refresh", onclick: function () { m.remove(); pollNow().then(function () { render2(); }); } }));
       m.appendChild(el("button", { type: "button", text: "Leave this session", onclick: leave }));
       document.body.appendChild(m);
     });
-    document.addEventListener("click", function () { var m = document.querySelector(".menu"); if (m) m.remove(); });
+    document.addEventListener("click", function () { [].forEach.call(document.querySelectorAll(".menu"), function (m) { m.remove(); }); });
   }
   function boot() { bind(); resume(); }
   if (MOCK) {

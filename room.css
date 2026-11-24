@@ -332,3 +332,45 @@ body.proj .phrase { font-size: 22px; }
 body.proj .theme { font-size: 16px; }
 body.proj .mtable { font-size: 20px; }
 body.proj details.refpanel { font-size: 20px; }
+
+/* ---- room screen: the join drawer that slides out from the right edge ---- */
+.joindrawer { position: fixed; top: 50%; right: 0; z-index: 20; display: flex; align-items: center; transform: translate(320px, -50%); transition: transform .3s ease; }
+.joindrawer.open { transform: translate(0, -50%); }
+.jtab { display: flex; flex-direction: column; align-items: center; gap: 8px; border: 1px solid var(--line); border-right: 0; border-radius: 14px 0 0 14px; background: var(--card); color: var(--ink); padding: 16px 10px; cursor: pointer; font: inherit; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; font-size: 15px; }
+.jtabtext { writing-mode: vertical-rl; transform: rotate(180deg); }
+.jarrow { font-size: 18px; transition: transform .3s ease; }
+.joindrawer.open .jarrow { transform: rotate(180deg); }
+.jpanel { position: relative; width: 320px; box-sizing: border-box; background: var(--card); border: 1px solid var(--line); border-right: 0; border-radius: 18px 0 0 18px; padding: 18px 20px 22px; text-align: center; box-shadow: -8px 0 28px rgba(0, 0, 0, .25); }
+.jpanel { max-height: calc(100vh - 24px); overflow-y: auto; }
+.jpanel img { display: block; width: 100%; max-width: min(100%, 58vh); height: auto; margin: 0 auto; background: #fff; padding: 12px; border-radius: 12px; box-sizing: border-box; }
+.jclose { position: absolute; top: 8px; right: 10px; border: 0; background: none; color: var(--muted); font-size: 26px; line-height: 1; cursor: pointer; padding: 4px 8px; }
+.jlab { font-size: 14px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--kick-ink); margin: 6px 0 10px; }
+.jcodelab { margin-top: 14px; margin-bottom: 4px; }
+.jurl { font-size: 15px; word-break: break-all; margin-top: 8px; }
+.jcode { font-size: 32px; font-weight: 700; letter-spacing: .06em; font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: reduce) { .joindrawer, .jarrow { transition: none; } }
+
+/* ---- phones: the table chip opens the check-in details ---- */
+.rchip.chipbtn { cursor: pointer; }
+@media (max-width: 520px) { .navr { flex-wrap: nowrap; gap: 6px; } .rchip { max-width: 44vw; } }
+.rchip.chipbtn::after { content: " \25BE"; }
+.chippanel { padding: 0; min-width: 260px; max-width: calc(100vw - 32px); }
+.chippanel .apanel { margin: 0; border: 0; }
+
+/* ---- sheets drawn as tables (D9, 7.1) and the multi-select dropdown ---- */
+.sheetgrid { min-width: 860px; }
+.sheetgrid th { text-align: left; }
+.sheetgrid td { vertical-align: top; }
+.sheetgrid td select { min-width: 140px; }
+.sheetgrid td textarea { min-width: 170px; min-height: 48px; height: 48px; padding: 6px 8px; font-size: 15px; }
+.sheetgrid th { min-width: 150px; }
+.sheetgrid th:nth-child(3) { min-width: 260px; }
+.sheetgrid th.sname { min-width: 150px; }
+details.mdrop { position: relative; min-width: 170px; margin: 0; padding: 0; border: 0; background: none; }
+details.mdrop > summary { cursor: pointer; list-style: none; border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; background: var(--card); font-size: 14px; }
+details.mdrop > summary::after { content: " \25BE"; }
+details.mdrop[open] > summary { border-color: var(--accent); }
+details.mdrop .mdlist { display: grid; gap: 4px; margin-top: 4px; padding: 6px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
+details.mdrop label { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; cursor: pointer; }
+details.mdrop input { width: 18px; height: 18px; margin: 2px 0 0; flex: 0 0 auto; }
+.mcell .linkbtn { display: inline-block; margin-right: 10px; }

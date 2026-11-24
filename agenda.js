@@ -112,7 +112,7 @@ window.PK_AGENDA = (function () {
       ideas: [
         { id: "g1", lead: "For governance, the new PK", text: "works as part of regular primary care (YAKAP), not a separate program", th: "I" }] },
     { id: "data", name: "Data and monitoring", opts: {
-        A: "Annex B indicators, national dashboard, independent evaluation by 2028.",
+        A: "The PK indicators in Annex B of the draft PK AO, a national dashboard, and an independent evaluation by 2028.",
         B: "PK monitoring is retired; progress is tracked through YAKAP registration and empanelment.",
         C: "Barangay reports feed the province or city self-assessment, not a parallel one.",
         D: "Who is reached and who exits; referral completion; a comparison of barangays just above and below the NHETE cut-off." },
@@ -133,7 +133,26 @@ window.PK_AGENDA = (function () {
     ["plan", "plan"], ["lead", "lead"], ["fund", "fund"], ["deliver", "deliver services"], ["coord", "coordinate"],
     ["promote", "promote health"], ["find", "find people who are missed"], ["monitor", "monitor and report"]];
 
-  var IND_INTRO ="For each component the plenary agreed in Session 6, write a specific indicator: what would show it is working, where it is measured, the data source, and who uses it to decide what. Include only indicators you consider feasible.";
+  // D9: core and adaptable elements, area by area (one idea per row); the UNA pillars from AO 2026-0012, Annex A
+  var PILLARS = ["Pillar 1: Healthy Schools, Workplaces and Communities", "Pillar 2: Primary Care System", "Pillar 3: Quality and Efficient Hospitals",
+    "Pillar 4: Information Technology Transformation", "Pillar 5: Strong Institutions, Workforce and Sector"];
+  var D9_COLS = [
+    { id: "element", label: "Element" },
+    { id: "class", label: "Core, adaptable or not yet settled", type: "select", options: ["Core", "Adaptable", "Not yet settled"] },
+    { id: "why", label: "If core: why it must be the same everywhere. If adaptable: what may change, who decides, and within what limits" },
+    { id: "una", label: "UNA pillar(s)", type: "multidrop", options: PILLARS },
+    { id: "rem", label: "Remarks" }];
+  var D9_AREAS = [
+    ["core", "Core PK services", ["Health promotion", "First patient encounter (health risk profiling)", "YAKAP / PhilHealth registration", "Referral to primary care and higher levels of care", "Follow-up of people under care"]],
+    ["prog", "Programs", ["Nutrition", "Immunization", "Maternal Health", "HIV", "TB", "Cancer", "Hypertension", "Diabetes", "Mental Health", "Road Safety", "WASH"]],
+    ["tgt", "Targeting", ["How sites are chosen", "Who is prioritized within a site"]],
+    ["wf", "Workforce", ["Nurse or midwife", "Barangay health workers", "Barangay nutrition scholars", "Supervision", "Training", "BHW incentives"]],
+    ["sup", "Supplies", ["Medicines and commodities", "Screening kits and equipment"]],
+    ["dat", "Data", ["Recording and reporting tool", "Indicators", "Feedback to LGUs"]],
+    ["fin", "Financing", ["Operating costs", "Funding sources"]],
+    ["gov", "Governance", ["Site action plan and its approval", "Coordination with the LGU and partners"]]];
+
+  var IND_INTRO = "For each component the plenary agreed in Session 6, propose indicators in the table: what would show the agreed “how” is working, how to calculate it, the level where it is measured, the data source, and who uses it to decide what. One indicator per row. Include only indicators you consider feasible.";
 
   var ACTIVITIES = {
     // ---------- Day 1 ----------
@@ -167,21 +186,11 @@ window.PK_AGENDA = (function () {
     s3_settled: { title: "Elements the pre-work already settles", kind: "form", texts: true, items: [
       { id: "answer", label: "Do you confirm the elements the pre-work already settles?", type: "single", options: [["confirm", "Confirm"], ["contest", "Contest one or more"]] },
       { id: "which", label: "Which, and why?", type: "text", showIf: { item: "answer", value: "contest" } }] },
-    d9_models: { title: "Models, and core or adaptable elements (D9)", kind: "sheet", sheets: TABLES,
-      intro: "Correct and add models (Part A). Then confirm or move each element between core and adaptable (Part B). Elements you cannot classify go to the design-questions register; do not force agreement.",
-      sections: [
-        { id: "a", title: "Part A. Existing and alternative models", type: "rows", add: "Add a model", cols: [
-          { id: "model", label: "Model" }, { id: "where", label: "Where and who runs it" }, { id: "services", label: "Services" },
-          { id: "providers", label: "Providers" }, { id: "ops", label: "Operational arrangements" }, { id: "me", label: "Monitoring and evaluation" },
-          { id: "status", label: "Evidence", type: "select", options: ["Documented", "Reported by a participant", "Unknown"] }] },
-        { id: "b", title: "Part B. Core and adaptable elements", type: "rows", add: "Add an element",
-          preset: ["Service package", "Targeting", "Workforce", "Supervision", "Supplies", "Data", "Financing", "Governance"], presetCol: "element",
-          cols: [
-            { id: "element", label: "Element" },
-            { id: "class", label: "Core or adaptable", type: "select", options: ["Core", "Adaptable", "Cannot classify: send to the register"] },
-            { id: "break", label: "What would break if it varied?" },
-            { id: "open", label: "Open question" }, { id: "una", label: "UNA link" }] }
-      ] },
+    d9_models: { title: "Core and adaptable elements (D9)", kind: "sheet", sheets: TABLES,
+      intro: "For each element, choose core, adaptable or not yet settled. Core: the new PK only works if this is the same everywhere. Adaptable: each LGU may adjust it to local needs, within limits. Not yet settled: say what still needs deciding in Remarks; staff carry it to the Day 2 clinics.",
+      sections: D9_AREAS.map(function (a) {
+        return { id: a[0], title: a[1], type: "rows", layout: "table", add: "Add an element", preset: a[2], presetCol: "element", cols: D9_COLS };
+      }) },
 
     d10: { title: "Your region's routes to the UNA numbers (D10)", kind: "form", d10: true, live: true,
       help: "Choose your region. Split how it will reach its minimum numbers across the routes; the shares must add up to 100%. Each share shows its estimated count." },
@@ -239,6 +248,9 @@ window.PK_AGENDA = (function () {
         { id: "p", title: "What the pre-work said would be most useful (Table 44)", type: "rows", add: "Add a result", cols: [{ id: "text", label: "Result" }, { id: "n", label: "Count" }] },
         { id: "w", title: "Also suggested in the written answers (Table 45)", type: "rows", add: "Add a theme", cols: [{ id: "text", label: "Theme" }, { id: "n", label: "Count" }] }] },
 
+    s7_merge: { title: "Agreed indicators (Session 7 plenary)", kind: "sheet", sheets: ["ROOM"], staffOnly: true, view: "merge7",
+      intro: "After each clinic presents, staff record the agreed indicator, its calculation, and its level, data source and user in the last three columns." },
+
     partner_d7: { title: "Partner alignment matrix (D7)", kind: "sheet", sheets: TABLES,
       intro: "Partners and DOH offices each fill in a row. The matrix goes to BIHC as an input to the partner resource plan.",
       sections: [{ id: "p", title: "Partners and offices", type: "rows", add: "Add a partner or office", cols: [
@@ -272,18 +284,13 @@ window.PK_AGENDA = (function () {
   //   optional: Next and Previous skip it; staff start it from the slide list.
   var SLIDES = [
     { day: "Day 1 · Wednesday 25 November", slides: [
-      { id: "s0_1", session: "Session 0: where PK stands", title: "0.1 Your clarifying question", acts: ["s0_clarify"] },
-      { id: "s0_2", session: "Session 0: where PK stands", title: "0.2 A result you would question", acts: ["s0_question"] },
       { id: "s1_1", session: "Session 1: the eight questions and the weights", title: "1.1 Accept the weights?", acts: ["s1_weights"] },
       { id: "s1_2", session: "Session 1: the eight questions and the weights", title: "1.2 Vote on the weights (if contested)", acts: ["s1_vote"], optional: true },
-      { id: "s2_1", session: "Session 2: one direction", title: "2.1 The starting elements", shown: ["s2_start"] },
       { id: "s2_2", session: "Session 2: one direction", title: "2.2 Choose your table's direction", acts: ["s2_choose"] },
       { id: "s2_3", session: "Session 2: one direction", title: "2.3 Test your direction", acts: ["s2_test"] },
       { id: "s2_m", session: "Session 2: one direction", title: "Merge: the one direction", shown: ["s2_merge"], reveal: ["s2_choose"] },
       { id: "s2_4", session: "Session 2: one direction", title: "2.4 Agreement check (only if needed)", acts: ["s2_agree"], optional: true, reveal: ["s2_merge"] },
-      { id: "s3_1", session: "Session 3: models, core and adaptable elements", title: "3.1 What can be carried over", acts: ["s3_carry"] },
-      { id: "s3_2", session: "Session 3: models, core and adaptable elements", title: "3.2 Elements the pre-work settles", acts: ["s3_settled"] },
-      { id: "s3_3", session: "Session 3: models, core and adaptable elements", title: "3.3 Models and core or adaptable elements (D9)", acts: ["d9_models"] },
+      { id: "s3_3", session: "Session 3: core and adaptable elements", title: "3.3 Core and adaptable elements (D9)", acts: ["d9_models"] },
       { id: "s4_1", session: "Session 4: reaching the UNA numbers", title: "4.1 Your region's routes (D10)", acts: ["d10"] }
     ] },
     { day: "Day 2 · Thursday 26 November", slides: [
@@ -291,21 +298,14 @@ window.PK_AGENDA = (function () {
       { id: "s6_1", session: "Session 6: how the direction will work", title: "6.1 The clinics", acts: ["c6_1", "c6_2", "c6_3"], reveal: ["s2_merge"] },
       { id: "s6_m", session: "Session 6: how the direction will work", title: "6.2 Agreed components (plenary)", shown: ["s6_merge"], reveal: ["c6_1", "c6_2", "c6_3"] },
       { id: "s7_1", session: "Session 7: indicators", title: "7.1 Indicators for the agreed components", acts: ["c7_1", "c7_2", "c7_3"], reveal: ["s6_merge", "ref_ind"] },
+      { id: "s7_2", session: "Session 7: indicators", title: "7.2 Agreed indicators (plenary)", shown: ["s7_merge"], reveal: ["c7_1", "c7_2", "c7_3", "s6_merge"] },
       { id: "s8_1", session: "Session 8: partner alignment", title: "8.1 Partner alignment matrix (D7)", acts: ["partner_d7"] },
       { id: "close", session: "Closing", title: "Evaluation", acts: ["evaluation"] }
     ] }
   ];
   // staff sheets kept on the Registers tab
-  var REGISTERS = ["ref_ind", "s2_merge", "s6_merge", "results_contest", "design_questions"];
+  var REGISTERS = ["ref_ind", "s2_merge", "s6_merge", "s7_merge", "results_contest", "design_questions"];
 
-  // D11, the one-page table guide, shown on every phone
-  var GUIDE = [
-    ["Roles", "The chair is a regional participant who is not the most senior at the table; the chair keeps time and makes sure every voice is heard. The rapporteur usually types the table's answers, on any phone at the table. One of the four BLHSD staff anchors each table and acts as the resource person."],
-    ["What is on your phone", "Your phone shows only the slide that is on the screen. Each slide says whether to answer on your own or as a table or clinic."],
-    ["Recording", "Write a one-line reason where asked. Record disagreements and minority positions as they are said; do not average them away."],
-    ["Counts and confidentiality", "The pre-work results are counts for combined groups. Do not try to work out who answered what."]
-  ];
-
-  return { activities: ACTIVITIES, slides: SLIDES, registers: REGISTERS, crit: CRIT, regions: REGIONS, nat: NAT, routes: ROUTES, levels: LEVELS, guide: GUIDE,
+  return { activities: ACTIVITIES, slides: SLIDES, registers: REGISTERS, crit: CRIT, regions: REGIONS, nat: NAT, routes: ROUTES, levels: LEVELS, pillars: PILLARS,
     s2: { options: S2_OPTIONS, themes: S2_THEMES, cats: S2_CATS, stakes: S2_STAKES, roles: S2_ROLES, basis: S2_BASIS, stakeBasis: S2_STAKE_BASIS } };
 })();
