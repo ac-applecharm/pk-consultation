@@ -278,8 +278,8 @@ body.proj .regmin { font-size: 18px; }
 }
 .mblock { margin: 0 0 18px; padding: 0 0 12px; border-bottom: 1px solid var(--line); }
 .mblock h4 { margin: 6px 0 8px; font-family: var(--serif); font-size: 19px; }
-.mblock .final { margin-top: 8px; display: grid; gap: 4px; max-width: 760px; }
-.mblock .final textarea { min-height: 52px; }
+.mblock div.final { margin-top: 8px; display: grid; gap: 4px; max-width: 760px; }
+.mblock div.final textarea { min-height: 52px; }
 .finalro { font-family: var(--serif); font-size: 17px; }
 body.proj .s2cat > b, body.proj .mblock h4 { font-size: 26px; }
 body.proj .optline, body.proj .idea { font-size: 20px; }
@@ -374,3 +374,12 @@ details.mdrop .mdlist { display: grid; gap: 4px; margin-top: 4px; padding: 6px; 
 details.mdrop label { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; cursor: pointer; }
 details.mdrop input { width: 18px; height: 18px; margin: 2px 0 0; flex: 0 0 auto; }
 .mcell .linkbtn { display: inline-block; margin-right: 10px; }
+
+/* ---- plenary pages drawn as one flat table (3.4, 7.2) ---- */
+.mtable.flat { min-width: 1100px; }
+.mtable.flat td.final { min-width: 220px; }
+.mtable.flat td.small { min-width: 140px; }
+.mtable.flat td:first-child { min-width: 150px; }
+.mtable.flat td.final select { min-width: 160px; }
+.mtable.flat tr.newcomp td { border-top: 2px solid var(--line); }
+.sheetgrid td.sname .linkbtn { display: block; margin-top: 4px; font-size: 13px; }

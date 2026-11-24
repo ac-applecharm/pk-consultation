@@ -192,6 +192,9 @@ window.PK_AGENDA = (function () {
         return { id: a[0], title: a[1], type: "rows", layout: "table", add: "Add an element", preset: a[2], presetCol: "element", cols: D9_COLS };
       }) },
 
+    s3_merge: { title: "Agreed core and adaptable elements (Session 3 plenary)", kind: "sheet", sheets: ["ROOM"], staffOnly: true, view: "merge3",
+      intro: "After the tables report, staff record what the plenary agreed for each element in the last three columns. Elements not yet settled go to the Day 2 clinics." },
+
     d10: { title: "Your region's routes to the UNA numbers (D10)", kind: "form", d10: true, live: true,
       help: "Choose your region. Split how it will reach its minimum numbers across the routes; the shares must add up to 100%. Each share shows its estimated count." },
 
@@ -291,6 +294,7 @@ window.PK_AGENDA = (function () {
       { id: "s2_m", session: "Session 2: one direction", title: "Merge: the one direction", shown: ["s2_merge"], reveal: ["s2_choose"] },
       { id: "s2_4", session: "Session 2: one direction", title: "2.4 Agreement check (only if needed)", acts: ["s2_agree"], optional: true, reveal: ["s2_merge"] },
       { id: "s3_3", session: "Session 3: core and adaptable elements", title: "3.3 Core and adaptable elements (D9)", acts: ["d9_models"] },
+      { id: "s3_m", session: "Session 3: core and adaptable elements", title: "3.4 Agreed core and adaptable elements (plenary)", shown: ["s3_merge"], reveal: ["d9_models"] },
       { id: "s4_1", session: "Session 4: reaching the UNA numbers", title: "4.1 Your region's routes (D10)", acts: ["d10"] }
     ] },
     { day: "Day 2 · Thursday 26 November", slides: [
@@ -304,7 +308,7 @@ window.PK_AGENDA = (function () {
     ] }
   ];
   // staff sheets kept on the Registers tab
-  var REGISTERS = ["ref_ind", "s2_merge", "s6_merge", "s7_merge", "results_contest", "design_questions"];
+  var REGISTERS = ["ref_ind", "s2_merge", "s3_merge", "s6_merge", "s7_merge", "results_contest", "design_questions"];
 
   return { activities: ACTIVITIES, slides: SLIDES, registers: REGISTERS, crit: CRIT, regions: REGIONS, nat: NAT, routes: ROUTES, levels: LEVELS, pillars: PILLARS,
     s2: { options: S2_OPTIONS, themes: S2_THEMES, cats: S2_CATS, stakes: S2_STAKES, roles: S2_ROLES, basis: S2_BASIS, stakeBasis: S2_STAKE_BASIS } };

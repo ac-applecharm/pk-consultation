@@ -593,7 +593,6 @@
     var ids = rowIds(sec, body), wrap = el("div");
     var tb = el("table", { class: "restable rolegrid sheetgrid" }), hd = el("tr");
     sec.cols.forEach(function (col, i) { hd.appendChild(el("th", { class: i === 0 ? "sname" : null, text: col.label })); });
-    if (editable && sec.add) hd.appendChild(el("th", { text: "" }));
     tb.appendChild(hd);
     ids.forEach(function (rowId) {
       var tr = el("tr"), preset = /^p\d+$/.test(rowId);
@@ -602,12 +601,12 @@
         // a preset element name is a label, not an answer
         if (preset && sec.presetCol === col.id && val && body[k] == null) td.appendChild(el("b", { text: val }));
         else td.appendChild(input(act, sheet, k, val, col, editable));
+        if (i === 0 && editable && sec.add && !preset) td.appendChild(el("button", { type: "button", class: "linkbtn", text: "Remove this row", onclick: function () {
+          if (!confirm("Remove this row?")) return;
+          queueRow(act, sheet, sec.id, "del", rowId); if (v) v.redraw();
+        } }));
         tr.appendChild(td);
       });
-      if (editable && sec.add) tr.appendChild(el("td", null, !preset ? el("button", { type: "button", class: "linkbtn", text: "Remove", onclick: function () {
-        if (!confirm("Remove this row?")) return;
-        queueRow(act, sheet, sec.id, "del", rowId); if (v) v.redraw();
-      } }) : null));
       if (!editable && !preset && sec.cols.every(function (col) { var x = cellVal(body, sec, rowId, col); return !x || (Array.isArray(x) && !x.length); })) return;
       tb.appendChild(tr);
     });
@@ -666,7 +665,7 @@
   // which view draws a sheet, and which other sheets it reads
   function depsOf(act) {
     var def = ACT[act] || {};
-    return [act].concat({ test: ["s2_choose"], merge2: ["s2_choose"], merge6: ["c6_1", "c6_2", "c6_3"], merge7: ["c7_1", "c7_2", "c7_3", "s6_merge"], ind: ["s6_merge", "ref_ind"] }[def.view] || [],
+    return [act].concat({ test: ["s2_choose"], merge2: ["s2_choose"], merge6: ["c6_1", "c6_2", "c6_3"], merge7: ["c7_1", "c7_2", "c7_3", "s6_merge"], merge3: ["d9_models"], ind: ["s6_merge", "ref_ind"] }[def.view] || [],
       def.showDirection ? ["s2_merge"] : []);
   }
   function viewFor(act, sheet, editable, v) {
@@ -677,6 +676,7 @@
     if (def.view === "merge2") return merge2View(editable, v);
     if (def.view === "merge6") return merge6View(editable, v);
     if (def.view === "merge7") return merge7View(editable, v);
+    if (def.view === "merge3") return merge3View(editable, v);
     if (def.view === "refind" && !editable) return refPanel(true);
     return sheetView(act, def, sheet, editable, v);
   }
@@ -1121,33 +1121,32 @@
     [1, 2, 3].forEach(function (n) {
       var c = indRows(n), sec = el("section", { class: "mblock" }, el("h4", { text: c.title }));
       function save(k, val) { queueCell("s7_merge", "ROOM", k, val); }
-      function ta(k, label) {
-        if (!editable) return el("div", { class: "finalro" + (clean(mb[k]) ? "" : " muted"), text: clean(mb[k]) || "\u2014" });
-        var t = el("textarea", { "data-k": k, "data-q": q, rows: "2", value: mb[k] || "", "aria-label": label }), tm;
-        t.addEventListener("input", function () { clearTimeout(tm); tm = setTimeout(function () { save(k, t.value); }, 600); });
-        t.addEventListener("blur", function () { clearTimeout(tm); if ((sheetBody("s7_merge", "ROOM")[k] || "") !== t.value) save(k, t.value); if (v) v.redraw(); });
-        return t;
-      }
       if (!c.rows.length) { sec.appendChild(el("p", { class: "muted", text: "No indicators from this clinic yet." })); box.appendChild(sec); return; }
-      var tb = el("table", { class: "restable mtable" }, el("tr", null, el("th", { text: "Component and proposed indicator" }), el("th", { class: "final", text: "Agreed indicator" }), el("th", { class: "final", text: "Agreed calculation" }), el("th", { class: "final", text: "Agreed level, data source and user" })));
-      var lastC = null;
-      c.rows.forEach(function (r) {
-        if (r.comp !== lastC) { tb.appendChild(el("tr", { class: "mhead" }, el("td", { colspan: "4" }, el("b", { text: r.comp })))); lastC = r.comp; }
+      var tb = el("table", { class: "restable mtable flat" }), hd = el("tr");
+      ["Component", "Indicator", "Calculation", "Level", "Data source", "Who uses it"].forEach(function (h) { hd.appendChild(el("th", { text: h })); });
+      ["Agreed indicator", "Agreed calculation", "Agreed level, data source and user"].forEach(function (h) { hd.appendChild(el("th", { class: "final", text: h })); });
+      tb.appendChild(hd);
+      var now = function (k, dflt) { return clean(sheetBody("s7_merge", "ROOM")[k]) || dflt; };
+      c.rows.forEach(function (r, i) {
         var lsu = [r.level ? "Level: " + r.level : "", r.source ? "Source: " + r.source : "", r.use ? "Used by: " + r.use : ""].filter(Boolean).join(". ");
-        var prop = el("td", { class: "small" }, el("div", null, el("b", { text: "Indicator: " }), r.ind || "\u2014"), r.calc ? el("div", null, el("b", { text: "Calculation: " }), r.calc) : null,
-          r.level ? el("div", null, el("b", { text: "Level: " }), r.level) : null, r.source ? el("div", null, el("b", { text: "Data source: " }), r.source) : null, r.use ? el("div", null, el("b", { text: "Who uses it: " }), r.use) : null);
-        var now = function (k, dflt) { return clean(sheetBody("s7_merge", "ROOM")[k]) || dflt; };
         function col(k, label, copyText, pollKey, pollQ) {
-          var td = el("td", { class: "final" }, ta(k, label));
-          if (editable) {
-            td.appendChild(el("div", { class: "row tight" },
-              copyText ? el("button", { type: "button", class: "linkbtn", text: "Copy", onclick: function () { save(k, copyText); if (v) v.redraw(); } }) : null,
-              el("button", { type: "button", class: "linkbtn", text: "Push to poll", onclick: function () { S.pollDraft = pollKey; if (v) v.redraw(); } })));
-            if (S.pollDraft === pollKey) td.appendChild(pollDraftForm(pollQ(), ["Agree", "Change it", "Leave out"], v));
-          }
+          var td = el("td", { class: "final" });
+          if (!editable) { td.appendChild(el("div", { class: "finalro" + (clean(mb[k]) ? "" : " muted"), text: clean(mb[k]) || "\u2014" })); return td; }
+          var t = el("textarea", { "data-k": k, "data-q": q, rows: "2", value: mb[k] || "", "aria-label": label }), tm;
+          t.addEventListener("input", function () { clearTimeout(tm); tm = setTimeout(function () { save(k, t.value); }, 600); });
+          t.addEventListener("blur", function () { clearTimeout(tm); if ((sheetBody("s7_merge", "ROOM")[k] || "") !== t.value) save(k, t.value); if (v) v.redraw(); });
+          td.appendChild(t);
+          td.appendChild(el("div", { class: "row tight" },
+            copyText ? el("button", { type: "button", class: "linkbtn", text: "Copy", onclick: function () { save(k, copyText); if (v) v.redraw(); } }) : null,
+            el("button", { type: "button", class: "linkbtn", text: "Push to poll", onclick: function () { S.pollDraft = pollKey; if (v) v.redraw(); } })));
+          if (S.pollDraft === pollKey) td.appendChild(pollDraftForm(pollQ(), ["Agree", "Change it", "Leave out"], v));
           return td;
         }
-        tb.appendChild(el("tr", null, prop,
+        var first = i === 0 || c.rows[i - 1].comp !== r.comp;
+        tb.appendChild(el("tr", { class: first ? "newcomp" : null },
+          el("td", { class: "small" }, first ? el("b", { text: r.comp }) : el("span", { class: "muted", text: "\u2033" })),
+          el("td", { class: "small", text: r.ind || "\u2014" }), el("td", { class: "small", text: r.calc || "\u2014" }), el("td", { class: "small", text: r.level || "\u2014" }),
+          el("td", { class: "small", text: r.source || "\u2014" }), el("td", { class: "small", text: r.use || "\u2014" }),
           col("fi." + r.key, "Agreed indicator", r.ind, r.key + "~i", function () { return "Agree on this indicator for " + lowFirst(r.comp) + ": " + now("fi." + r.key, r.ind) + "?"; }),
           col("fc." + r.key, "Agreed calculation", r.calc, r.key + "~c", function () { return "Agree on this calculation: " + now("fc." + r.key, r.calc || "\u2026") + "?"; }),
           col("fl." + r.key, "Agreed level, data source and user", lsu, r.key + "~l", function () { return "Agree: " + now("fl." + r.key, lsu || "\u2026") + "?"; })));
@@ -1156,6 +1155,106 @@
       sec.appendChild(agreedIndBox(c, agreedInd(c, mb)));
       box.appendChild(sec);
     });
+    return box;
+  }
+  // ----- 3.4: what the tables said about each D9 element, and what the plenary agreed -----
+  var D9_CLASSES = ["Core", "Adaptable", "Not yet settled"];
+  function d9Rows() {
+    var def = ACT.d9_models, bodies = {}, out = [];
+    TABLES.forEach(function (t) { bodies[t] = sheetBody("d9_models", t); });
+    def.sections.forEach(function (sec) {
+      var rows = (sec.preset || []).map(function (name, i) { return { key: sec.id + "_p" + i, rid: "p" + i, name: name }; });
+      TABLES.forEach(function (t) {
+        addedRows(bodies[t], sec.id).forEach(function (r) {
+          var name = clean(bodies[t][sec.id + "." + r + ".element"]); if (!name) return;
+          rows.push({ key: sec.id + "_" + t + "_" + r, rid: r, name: name, by: t });
+        });
+      });
+      rows.forEach(function (row) {
+        row.per = TABLES.map(function (t) {
+          if (row.by && row.by !== t) return null;
+          var b = bodies[t], pre = sec.id + "." + row.rid + ".", u = b[pre + "una"];
+          return { cls: clean(b[pre + "class"]), why: clean(b[pre + "why"]), una: Array.isArray(u) ? u : [], rem: clean(b[pre + "rem"]) };
+        });
+      });
+      out.push({ id: sec.id, title: sec.title, rows: rows });
+    });
+    return out;
+  }
+  function pillarShort(list) { return (list || []).map(function (x) { return String(x).split(":")[0]; }).join(", "); }
+  function d9Agreed(mb) {
+    var groups = {}; D9_CLASSES.forEach(function (c) { groups[c] = []; });
+    d9Rows().forEach(function (a) { a.rows.forEach(function (r) {
+      var c = mb["fc." + r.key]; if (!groups[c]) return;
+      groups[c].push({ area: a.title, name: r.name, why: clean(mb["fw." + r.key]), una: pillarShort(mb["fp." + r.key]) });
+    }); });
+    return groups;
+  }
+  function d9AgreedBox(mb) {
+    var g = d9Agreed(mb), w = el("div");
+    [["Core", "Core: the same everywhere"], ["Adaptable", "Adaptable: may vary locally, within limits"], ["Not yet settled", "Not yet settled: to the Day 2 clinics"]].forEach(function (x) {
+      var list = g[x[0]];
+      w.appendChild(el("div", { class: "statement" }, el("div", { class: "slab", text: x[1] }),
+        list.length ? el("ol", null, list.map(function (a) { return el("li", null, el("b", { text: a.name }), el("span", { class: "muted", text: " (" + a.area + ")" }), a.why ? ": " + a.why : "", a.una ? el("div", { class: "muted small", text: "UNA: " + a.una }) : null); }))
+          : el("p", { class: "muted", text: "None recorded yet." })));
+    });
+    return w;
+  }
+  function merge3View(editable, v) {
+    var mb = sheetBody("s3_merge", "ROOM"), q = sheetKey("s3_merge", "ROOM"), box = el("div", { class: "merge" });
+    var save = function (k, val) { queueCell("s3_merge", "ROOM", k, val); };
+    d9Rows().forEach(function (area) {
+      var sec = el("section", { class: "mblock" }, el("h4", { text: area.title }));
+      var tb = el("table", { class: "restable mtable flat" }), hd = el("tr", null, el("th", { text: "Element" }));
+      TABLES.forEach(function (t) { hd.appendChild(el("th", { text: SHEET_NAMES[t] })); });
+      ["Agreed: core, adaptable or not yet settled", "Agreed: why, or what may vary and within what limits", "Agreed UNA pillar(s)"].forEach(function (h) { hd.appendChild(el("th", { class: "final", text: h })); });
+      tb.appendChild(hd);
+      var shown = 0;
+      area.rows.forEach(function (r) {
+        var used = r.per.some(function (c) { return c && (c.cls || c.why || c.una.length || c.rem); });
+        if (!editable && !used && !mb["fc." + r.key]) return;
+        shown++;
+        var tr = el("tr", null, el("td", null, el("b", { text: r.name }), r.by ? el("div", { class: "muted small", text: "added by " + SHEET_NAMES[r.by] }) : null));
+        r.per.forEach(function (c) {
+          tr.appendChild(el("td", { class: "small" }, !c ? "\u2014" : [
+            c.cls ? el("div", null, el("b", { text: c.cls })) : el("div", { class: "muted", text: "\u2014" }),
+            c.why ? el("div", { text: c.why }) : null,
+            c.una.length ? el("div", { class: "muted", text: "UNA: " + pillarShort(c.una) }) : null,
+            c.rem ? el("div", { class: "muted", text: "Remark: " + c.rem }) : null]));
+        });
+        function actions(k, copies, pollKey, pollQ, pollOpts) {
+          var d = el("div", { class: "row tight" });
+          copies.forEach(function (cp) { d.appendChild(el("button", { type: "button", class: "linkbtn", text: cp[0], onclick: function () {
+            // fill the box first, so the redraw does not save its old text back
+            var ta = box.querySelector('textarea[data-k="' + k + '"]'); if (ta) ta.value = cp[1];
+            save(k, cp[1]); if (v) v.redraw();
+          } })); });
+          d.appendChild(el("button", { type: "button", class: "linkbtn", text: "Push to poll", onclick: function () { S.pollDraft = pollKey; if (v) v.redraw(); } }));
+          var w = el("div", null, d);
+          if (S.pollDraft === pollKey) w.appendChild(pollDraftForm(pollQ(), pollOpts, v));
+          return w;
+        }
+        var ck = "fc." + r.key, wk = "fw." + r.key, pk = "fp." + r.key;
+        var tdC = el("td", { class: "final" }, input("s3_merge", "ROOM", ck, mb[ck] || "", { type: "select", options: D9_CLASSES, label: "Agreed: " + r.name }, editable));
+        var tdW = el("td", { class: "final" }, input("s3_merge", "ROOM", wk, mb[wk] || "", { label: "Agreed reason: " + r.name }, editable));
+        var tdP = el("td", { class: "final" }, input("s3_merge", "ROOM", pk, mb[pk] || [], { type: "multidrop", options: AG.pillars, label: "Agreed UNA pillars: " + r.name }, editable));
+        if (editable) {
+          var sel = tdC.querySelector("select"); if (sel) sel.addEventListener("change", function () { if (v) setTimeout(v.redraw, 0); });
+          tdC.appendChild(actions(ck, [], r.key + "~c", function () { return "Is \u201c" + r.name + "\u201d core, adaptable or not yet settled?"; }, D9_CLASSES));
+          tdW.appendChild(actions(wk, TABLES.map(function (t, i) { var c = r.per[i]; return c && c.why ? ["Copy " + SHEET_NAMES[t], c.why] : null; }).filter(Boolean), r.key + "~w",
+            function () { return "Agree for \u201c" + r.name + "\u201d: " + (clean(sheetBody("s3_merge", "ROOM")[wk]) || "\u2026") + "?"; }, ["Agree", "Change it", "Leave out"]));
+          tdP.appendChild(actions(pk, TABLES.map(function (t, i) { var c = r.per[i]; return c && c.una.length ? ["Copy " + SHEET_NAMES[t], c.una] : null; }).filter(Boolean), r.key + "~p",
+            function () { return "Which UNA pillar does \u201c" + r.name + "\u201d serve?"; }, AG.pillars.map(function (x) { return String(x).split(":")[0]; })));
+        }
+        tr.appendChild(tdC); tr.appendChild(tdW); tr.appendChild(tdP);
+        tb.appendChild(tr);
+      });
+      if (!shown) sec.appendChild(el("p", { class: "muted", text: "No answers in this area yet." }));
+      else sec.appendChild(el("div", { class: "mscroll" }, tb));
+      box.appendChild(sec);
+    });
+    box.appendChild(el("h4", { text: "What the plenary agreed" }));
+    box.appendChild(d9AgreedBox(mb));
     return box;
   }
   function refPanel(open) {
@@ -1308,6 +1407,7 @@
       [1, 2, 3].forEach(function (n) { var sh = "C" + n, ag = agreedFor(sh); w.appendChild(el("div", { class: "statement" }, el("div", { class: "slab", text: SHEET_NAMES[sh] + ": agreed components" }), ag.length ? el("ol", null, ag.map(function (a) { return el("li", null, el("b", { text: a.topic + ": " }), a.how); })) : el("p", { class: "muted", text: "None recorded yet." }))); });
       return w;
     } }));
+    else if (def.view === "merge3") box.appendChild(liveView({ deps: depsOf(k), draw: function () { return d9AgreedBox(sheetBody("s3_merge", "ROOM")); } }));
     else if (def.view === "merge7") box.appendChild(liveView({ deps: depsOf(k), draw: function () {
       var w = el("div"); [1, 2, 3].forEach(function (n) { var c = indRows(n); w.appendChild(agreedIndBox(c, agreedInd(c, sheetBody("s7_merge", "ROOM")))); }); return w;
     } }));
@@ -1553,6 +1653,7 @@
       if (ACT[k].view === "merge2") card.appendChild(liveView({ deps: depsOf(k).concat(["s2_merge"]), draw: function () { return merge2View(false); } }));
       else if (ACT[k].view === "merge6") card.appendChild(liveView({ deps: depsOf(k).concat(["s6_merge"]), draw: function () { return merge6View(false); } }));
       else if (ACT[k].view === "merge7") card.appendChild(liveView({ deps: depsOf(k), draw: function () { return merge7View(false); } }));
+      else if (ACT[k].view === "merge3") card.appendChild(liveView({ deps: depsOf(k), draw: function () { return merge3View(false); } }));
       else card.appendChild(liveView({ deps: [k], draw: function () { return viewFor(k, "ROOM", false); } }));
     });
     var acts = slideActs(s), sheets = sheetActsOf(s);
@@ -1700,7 +1801,7 @@
     (s.shown || []).forEach(function (k) {
       var def = ACT[k];
       if (def.view !== "start") box.appendChild(el("p", { class: "muted small", text: def.intro || "" }));
-      if (def.view === "merge2" || def.view === "merge6" || def.view === "merge7") box.appendChild(sheetLive(k, "ROOM", true));
+      if (def.view === "merge2" || def.view === "merge6" || def.view === "merge7" || def.view === "merge3") box.appendChild(sheetLive(k, "ROOM", true));
       else { box.appendChild(sheetLive(k, "ROOM", false)); if (def.view !== "start") box.appendChild(el("p", { class: "muted small", text: "Edit it on the Staff sheets tab." })); }
     });
     var sheets = sheetActsOf(s);
