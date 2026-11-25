@@ -533,7 +533,7 @@
       if (parts[0] === "mix" && cat) return cat.name + ": own idea";
       if (parts[0] === "pw" && cat) { var idea = pick(cat.ideas, parts[2]); return cat.name + ": " + (idea ? idea.text : parts[2]); }
       if (parts[0] === "st") { var st = pick(AG.s2.stakes, parts[1]); var rl = pick(AG.s2.roles, parts[2]); return cap(st ? st[1] : parts[1]) + ": " + (parts[2] === "rem" ? "remarks" : parts[2] === "none" ? "no role" : (rl ? rl[1] : parts[2])); }
-      if (parts[0] === "ns") return "Added stakeholder: " + (parts[2] || "");
+      if (parts[0] === "ns") { var rl2 = pick(AG.s2.roles, parts[2]); return "Added stakeholder: " + (parts[2] === "name" ? "name" : parts[2] === "rem" ? "remarks" : parts[2] === "none" ? "no role" : (rl2 ? rl2[1] : parts[2])); }
       return k;
     }
     if (def.view === "test") { var cr = pick(AG.crit, parts[1]); return (cr ? cr[1] : parts[1]) + (parts[0] === "sc" ? ": score" : ": reason"); }
@@ -2141,6 +2141,7 @@
     } });
     c.appendChild(t); c.appendChild(cc);
     view.appendChild(c);
+    view.appendChild(exportCard());
     if (S.stage === "trial") {
       var tr = el("div", { class: "ctl" }, el("h3", { text: "Trial room" })), tout = el("div");
       tr.appendChild(el("p", { class: "muted", style: "margin-top:0", text: "Clears every trial answer, sheet and participant and puts the trial back at the start. The evaluation link and the live room are not touched." }));
@@ -2152,6 +2153,161 @@
       } }));
       tr.appendChild(tout); view.appendChild(tr);
     }
+  }
+
+  // ----- download the data of this room (staff): an Excel file to read, and a full backup -----
+  var PAGE_VER = "20261126c";
+  function exportCard() {
+    var out = el("div"), card = el("div", { class: "ctl" }, el("h3", { text: "Download the data of this room (" + S.stage + ")" }),
+      el("p", { class: "muted", style: "margin-top:0", text: "Everything saved in this room so far: every table, clinic and staff sheet, every personal answer (without who gave it; the database keeps no names) and the vote totals. The Excel file is for reading; the backup keeps the data exactly as stored." }));
+    var b1 = el("button", { type: "button", class: "btn small", text: "Download answers (Excel)", onclick: function () { run("xlsx"); } });
+    var b2 = el("button", { type: "button", class: "btn ghost small", text: "Download full backup (.json)", onclick: function () { run("json"); } });
+    card.appendChild(el("div", { class: "row tight" }, b1, b2));
+    card.appendChild(out);
+    function run(kind) {
+      b1.disabled = b2.disabled = true;
+      collectRoom(function (i, n) { msg(out, "Reading " + i + " of " + n + " activities\u2026"); }).then(function (data) {
+        if (kind === "json") {
+          saveBlob(new Blob([JSON.stringify(data, null, 1)], { type: "application/json" }), exportName("backup", "json"));
+          msg(out, "Backup downloaded." + (data.history_note ? " " + data.history_note : ""), "ok"); return;
+        }
+        return loadXlsx().then(function (X) {
+          X.writeFile(exportWorkbook(X, data), exportName("answers", "xlsx"));
+          msg(out, "Excel file downloaded.", "ok");
+        });
+      }).catch(function (e) {
+        msg(out, e && e.xlsx ? "The Excel tool could not be loaded (no internet?). Use the backup button instead." : errText(e), "err");
+      }).then(function () { b1.disabled = b2.disabled = false; });
+    }
+    return card;
+  }
+  function exportName(kind, ext) {
+    var d = new Date(), two = function (n) { return ("0" + n).slice(-2); };
+    return "PK room " + kind + " (" + S.stage + ") " + d.getFullYear() + "-" + two(d.getMonth() + 1) + "-" + two(d.getDate()) + " " + two(d.getHours()) + two(d.getMinutes()) + "." + ext;
+  }
+  function saveBlob(blob, name) {
+    var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+  }
+  function loadXlsx() {
+    if (window.XLSX) return Promise.resolve(window.XLSX);
+    return new Promise(function (resolve, reject) {
+      var sc = document.createElement("script");
+      sc.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+      sc.onload = function () { if (window.XLSX) resolve(window.XLSX); else reject({ xlsx: true }); };
+      sc.onerror = function () { reject({ xlsx: true }); };
+      document.head.appendChild(sc);
+    });
+  }
+  // every activity: those on slides in running order, then the rest (old slides, staff registers), then quick votes
+  function exportActs() {
+    var order = [], seen = {};
+    var add = function (k) { if (k && !seen[k]) { seen[k] = true; order.push(k); } };
+    slideList().forEach(function (sl) { (sl.acts || []).concat(sl.shown || [], sl.reveal || []).forEach(add); });
+    Object.keys(ACT).forEach(add);
+    Object.keys(quickMap()).forEach(add);
+    return order;
+  }
+  function collectRoom(progress) {
+    var acts = exportActs(), i = 0, histOk = true;
+    var data = { exported_at: new Date().toISOString(), room: S.stage, page_version: PAGE_VER,
+      state: { slide_id: S.st.slide_id, acts: S.st.acts, settings: S.st.settings }, sheets: {}, answers: {}, results: {}, history: {} };
+    var chain = Promise.resolve();
+    acts.forEach(function (k) {
+      chain = chain.then(function () {
+        progress(++i, acts.length);
+        var def = actDef(k) || {};
+        if (def.kind === "sheet") {
+          return rpc("room_get_sheets", { p_code: S.code, p_session: S.session, p_activity: k }).then(function (r) {
+            if (!r.ok || !r.sheets.length) return;
+            data.sheets[k] = r.sheets;
+            // the change history (18_room_sheet_log.sql); skipped when that file has not been run
+            return r.sheets.reduce(function (pr, sh) {
+              return pr.then(function () {
+                if (!histOk) return;
+                return rpc("room_sheet_history", { p_code: S.code, p_session: S.session || null, p_activity: k, p_sheet: sh.sheet }).then(function (h) {
+                  if (h.ok && h.rows.length) (data.history[k] = data.history[k] || {})[sh.sheet] = h.rows;
+                }).catch(function () { histOk = false; });
+              });
+            }, Promise.resolve());
+          });
+        }
+        if (def.kind === "form") {
+          return Promise.all([
+            rpc("room_answers", { p_code: S.code, p_activity: k }).then(function (r) { if (r.ok && r.answers.length) data.answers[k] = r.answers; }),
+            rpc("room_results", { p_code: S.code, p_activity: k, p_mode: "votes" }).then(function (r) { if (r.ok && r.rows.length) data.results[k] = r.rows; })
+          ]);
+        }
+      });
+    });
+    return chain.then(function () {
+      if (!histOk) data.history_note = "The change history is not included: 18_room_sheet_log.sql has not been run yet.";
+      return data;
+    });
+  }
+  function exportWorkbook(X, data) {
+    var sessOf = {};
+    slideList().forEach(function (sl) { (sl.acts || []).concat(sl.shown || []).forEach(function (k) { if (!sessOf[k]) sessOf[k] = sl.session || ""; }); });
+    var title = function (k) { return (actDef(k) || {}).title || k; };
+    var show = function (v) { return Array.isArray(v) ? v.join(", ") : v === true ? "Yes" : v === false ? "No" : v == null ? "" : String(v); };
+    var when = function (t) { return t ? new Date(t).toLocaleString() : ""; };
+    var itemOf = function (def, id) { return (def.items || []).filter(function (x) { return x.id === id; })[0]; };
+    var optLabel = function (it, v) { var o = it && it.options ? it.options.filter(function (x) { return String(x[0]) === String(v); })[0] : null; return o ? o[1] : show(v); };
+
+    var g = [["Session", "Activity", "Sheet", "Box", "Answer", "Sheet last saved"]];
+    Object.keys(data.sheets).forEach(function (k) {
+      data.sheets[k].forEach(function (sh) {
+        var body = sh.body || {};
+        Object.keys(body).filter(function (key) { return !/\._rows$/.test(key) && body[key] !== false && show(body[key]).trim() !== ""; })
+          .map(function (key) {
+            var val = show(body[key]);
+            // Session 2: the choice per part reads as "Option B" or "A mix"
+            if ((actDef(k) || {}).view === "choose" && /^pk\./.test(key)) val = val === "mix" ? "A mix" : "Option " + val;
+            return [keyLabel(k, key), val];
+          })
+          .sort(function (a, b) { return a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0; })
+          .forEach(function (x) { g.push([sessOf[k] || "", title(k), SHEET_NAMES[sh.sheet] || sh.sheet, x[0], x[1], when(sh.updated_at)]); });
+      });
+    });
+
+    var pa = [["Session", "Activity", "Question", "Answer"]];
+    Object.keys(data.answers).forEach(function (k) {
+      var def = actDef(k) || {};
+      data.answers[k].forEach(function (a) {
+        var pl = a.payload || {}, it = itemOf(def, a.item), ans;
+        if (def.d10) {
+          var m = regionMin(pl.region);
+          ans = (m ? m.name : show(pl.region)) + ": " + AG.routes.map(function (r) { return r[1] + " " + (+pl[r[0]] || 0) + "%"; }).join("; ") +
+            (pl.oth_txt ? " (others: " + pl.oth_txt + ")" : "") + (pl.needs ? ". Needs: " + pl.needs : "");
+          pa.push([sessOf[k] || "", title(k), "Region and routes", ans]); return;
+        }
+        ans = pl.text != null ? String(pl.text) : pl.v != null ? optLabel(it, pl.v) : JSON.stringify(pl);
+        if (ans.trim() !== "") pa.push([sessOf[k] || "", title(k), it ? it.label : a.item, ans]);
+      });
+    });
+
+    var vt = [["Session", "Activity", "Question", "Option", "Count"]];
+    Object.keys(data.results).forEach(function (k) {
+      var def = actDef(k) || {}, sum = {}, keys = [];
+      data.results[k].forEach(function (r) { var key = r.item + "\u0001" + r.val; if (!(key in sum)) { sum[key] = 0; keys.push(key); } sum[key] += +r.n || 0; });
+      keys.forEach(function (key) {
+        var parts = key.split("\u0001"), it = itemOf(def, parts[0]);
+        vt.push([sessOf[k] || "", title(k), it ? it.label : parts[0], optLabel(it, parts[1]), sum[key]]);
+      });
+    });
+
+    var about = [["Room", data.room], ["Exported", when(data.exported_at)], ["Page version", data.page_version],
+      ["Note", "Answers carry no names: the database does not record who gave them. Group sheets are per table, clinic or staff sheet."],
+      ["History", data.history_note || "Included in the full backup (.json)."]];
+
+    var wb = X.utils.book_new();
+    var addSheet = function (rows, name, widths) { var ws = X.utils.aoa_to_sheet(rows); ws["!cols"] = widths.map(function (w) { return { wch: w }; }); X.utils.book_append_sheet(wb, ws, name); };
+    addSheet(g, "Group sheets", [30, 36, 14, 60, 80, 20]);
+    addSheet(pa, "Personal answers", [30, 36, 60, 80]);
+    addSheet(vt, "Vote totals", [30, 36, 60, 40, 8]);
+    addSheet(about, "About", [14, 100]);
+    return wb;
   }
 
   // ---------- menu ----------
