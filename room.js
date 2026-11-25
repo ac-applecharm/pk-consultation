@@ -348,6 +348,31 @@
   // ---------- live views: parts of the page that redraw when their data changes ----------
   // Each view names the sheets it reads (deps) and may fetch other data. It redraws when the data changes,
   // unless someone is typing in it; then only the other boxes are updated, and it redraws once they stop.
+  // text boxes grow with their text (no fixed height, nothing to drag)
+  function fitBox(ta) {
+    if (!ta || ta.tagName !== "TEXTAREA" || !ta.offsetParent) return;
+    var cs = getComputedStyle(ta), edge = (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.borderBottomWidth) || 0);
+    ta.style.height = "auto";
+    ta.style.height = (ta.scrollHeight + edge) + "px";
+  }
+  function fitAll(root) { [].forEach.call((root || document).querySelectorAll("textarea"), fitBox); }
+  function autoGrow() {
+    document.addEventListener("input", function (e) { if (e.target && e.target.tagName === "TEXTAREA") fitBox(e.target); });
+    document.addEventListener("toggle", function (e) { if (e.target && e.target.querySelectorAll) fitAll(e.target); }, true);
+    var queued = false;
+    var later = function () { if (queued) return; queued = true; requestAnimationFrame(function () { queued = false; fitAll(document); }); };
+    if (window.MutationObserver) new MutationObserver(function (list) {
+      for (var i = 0; i < list.length; i++) {
+        var added = list[i].addedNodes;
+        for (var j = 0; j < added.length; j++) {
+          var n = added[j];
+          if (n.nodeType === 1 && (n.tagName === "TEXTAREA" || n.querySelector("textarea"))) { later(); return; }
+        }
+      }
+    }).observe(document.body, { childList: true, subtree: true });
+    var rt; window.addEventListener("resize", function () { clearTimeout(rt); rt = setTimeout(function () { fitAll(document); }, 150); });
+    later();
+  }
   function liveView(o) {
     var v = { node: el("div", { class: "lv" }), deps: o.deps || [], fetch: o.fetch, draw: o.draw, sig: null, data: o.data };
     v.redraw = function () { drawView(v); };
@@ -702,7 +727,8 @@
           var grid = el("div", { class: "sgrid" });
           sec.cols.forEach(function (col) {
             var k = sec.id + "." + rowId + "." + col.id, val = cellVal(body, sec, rowId, col);
-            var f = el("label", { class: "sfield" + (col.type === "check" ? " check" : "") + (col.type === "multi" ? " wide" : "") }, el("span", { class: "slab", text: col.label }), input(act, sheet, k, val, col, editable));
+            var isText = ["select", "region", "check", "multidrop", "multi"].indexOf(col.type) < 0;
+            var f = el("label", { class: "sfield" + (col.type === "check" ? " check" : "") + (col.type === "multi" || (isText && editable) ? " wide" : "") }, el("span", { class: "slab", text: col.label }), input(act, sheet, k, val, col, editable));
             grid.appendChild(f);
             if (col.type === "region") f.appendChild(regMinNode(val));
           });
@@ -1313,7 +1339,7 @@
           var d = el("div", { class: "row tight" });
           copies.forEach(function (cp) { d.appendChild(el("button", { type: "button", class: "linkbtn", text: cp[0], onclick: function () {
             // fill the box first, so the redraw does not save its old text back
-            var ta = box.querySelector('textarea[data-k="' + k + '"]'); if (ta) ta.value = cp[1];
+            var ta = box.querySelector('textarea[data-k="' + k + '"]'); if (ta) { ta.value = cp[1]; fitBox(ta); }
             save(k, cp[1]); if (v) v.redraw();
           } })); });
           d.appendChild(el("button", { type: "button", class: "linkbtn", text: "Push to poll", onclick: function () { S.pollDraft = pollKey; if (v) v.redraw(); } }));
@@ -2156,7 +2182,7 @@
   }
 
   // ----- download the data of this room (staff): an Excel file to read, and a full backup -----
-  var PAGE_VER = "20261126c";
+  var PAGE_VER = "20261126d";
   function exportCard() {
     var out = el("div"), card = el("div", { class: "ctl" }, el("h3", { text: "Download the data of this room (" + S.stage + ")" }),
       el("p", { class: "muted", style: "margin-top:0", text: "Everything saved in this room so far: every table, clinic and staff sheet, every personal answer (without who gave it; the database keeps no names) and the vote totals. The Excel file is for reading; the backup keeps the data exactly as stored." }));
@@ -2325,7 +2351,7 @@
     document.addEventListener("click", function () { [].forEach.call(document.querySelectorAll(".menu"), function (m) { m.remove(); }); });
   }
   function boot() {
-    bind(); resume();
+    autoGrow(); bind(); resume();
     var saveNow = function () { if (!S.running) return; saveTyped(); clearTimeout(S.sqTimer); flushSheets(); };
     document.addEventListener("visibilitychange", function () { if (document.hidden) saveNow(); });
     window.addEventListener("pagehide", saveNow);

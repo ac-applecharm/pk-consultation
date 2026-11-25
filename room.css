@@ -278,7 +278,7 @@ body.proj .regmin { font-size: 18px; }
 }
 .mblock { margin: 0 0 18px; padding: 0 0 12px; border-bottom: 1px solid var(--line); }
 .mblock h4 { margin: 6px 0 8px; font-family: var(--serif); font-size: 19px; }
-.mblock div.final { margin-top: 8px; display: grid; gap: 4px; max-width: 760px; }
+.mblock div.final { margin-top: 8px; display: grid; gap: 4px; }
 .mblock div.final textarea { min-height: 52px; }
 .finalro { font-family: var(--serif); font-size: 17px; }
 body.proj .s2cat > b, body.proj .mblock h4 { font-size: 26px; }
@@ -362,7 +362,7 @@ body.proj details.refpanel { font-size: 20px; }
 .sheetgrid th { text-align: left; }
 .sheetgrid td { vertical-align: top; }
 .sheetgrid td select { min-width: 140px; }
-.sheetgrid td textarea { min-width: 170px; min-height: 48px; height: 48px; padding: 6px 8px; font-size: 15px; }
+.sheetgrid td textarea { min-width: 170px; min-height: 48px; padding: 6px 8px; font-size: 15px; }
 .sheetgrid th { min-width: 150px; }
 .sheetgrid th:nth-child(3) { min-width: 260px; }
 .sheetgrid th.sname { min-width: 150px; }
@@ -413,3 +413,6 @@ textarea.unsaved { border-color: var(--warn-ink); box-shadow: 0 0 0 1px var(--wa
 /* ---- menus and panels open on the viewer's screen, under the sticky header, wherever the page is scrolled ---- */
 body.trial .menu { top: calc(var(--ribbon-h, 44px) + 70px); }
 .histmenu, .chippanel { max-height: calc(100vh - 100px); overflow-y: auto; }
+
+/* ---- text boxes grow with their text and fill their space (fitBox in room.js) ---- */
+#view textarea, .menu textarea { width: 100%; box-sizing: border-box; resize: none; overflow-y: hidden; }
