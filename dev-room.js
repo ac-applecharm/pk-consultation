@@ -254,7 +254,8 @@
         } else cur.body[x] = v;
       });
       cur.at = new Date().toISOString(); cur.by = whoLabel; R.sheets[k] = cur;
-      R.log = R.log || []; R.log.push({ activity: b.p_activity, sheet: b.p_sheet, patch: b.p_patch, by: whoLabel, at: cur.at });
+      // as 19_room_log_staff_save.sql: phones always go into the history; staff only when they pressed Save (p_log)
+      if (a.role !== "staff" || b.p_log === true) { R.log = R.log || []; R.log.push({ activity: b.p_activity, sheet: b.p_sheet, patch: b.p_patch, by: whoLabel, at: cur.at }); }
       return { ok: true };
     },
     room_sheet_history: function (b, d) {

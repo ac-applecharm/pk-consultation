@@ -511,22 +511,29 @@
     S.sqBusy = true;
     var q = keys[0], parts = q.split("|"), patch = S.sq[q];
     S.sq[q] = {}; delete S.sq[q];
-    rpc("room_save_sheet", { p_code: S.code, p_session: S.session, p_activity: parts[0], p_sheet: parts[1], p_patch: patch }).then(function (r) {
+    var body = { p_code: S.code, p_session: S.session, p_activity: parts[0], p_sheet: parts[1], p_patch: patch };
+    // staff: only a Save press goes into the history; phones are logged by the database as before
+    var logIt = isStaff() && S.sqLog && S.sqLog[q];
+    if (logIt && !S.noLogParam) body.p_log = true;
+    rpc("room_save_sheet", body).then(function (r) {
       S.sqBusy = false;
+      if (logIt && S.sqLog) delete S.sqLog[q];
       if (r.ok) { S.sqSaved = true; lsSet(sqKey(), Object.keys(S.sq).length ? S.sq : undefined); flushSheets(); return; }
       lsSet(sqKey(), Object.keys(S.sq).length ? S.sq : undefined);
       keepRefused(parts[0], parts[1], patch);
       toast(r.reason === "not_open" ? "The slide moved on. Your last change was not saved; it is kept at the top of your page." : "A change could not be saved (" + (r.reason || "unknown") + ").");
       setSave("fail"); flushSheets();
-    }).catch(function () {
+    }).catch(function (e) {
       // put the patch back and try again later
       S.sqBusy = false;
+      // the database does not know p_log yet (19_room_log_staff_save.sql not run): save without it
+      if (body.p_log && e && e.http === 404) { S.noLogParam = true; }
       var later = S.sq[q] || {};
       Object.keys(later).forEach(function (k) {
         if (/\._(add|del)$/.test(k)) patch[k] = [].concat(patch[k] || [], later[k]); else patch[k] = later[k];
       });
       S.sq[q] = patch; lsSet(sqKey(), S.sq); setSave("queued");
-      clearTimeout(S.sqTimer); S.sqTimer = setTimeout(flushSheets, 5000);
+      clearTimeout(S.sqTimer); S.sqTimer = setTimeout(flushSheets, S.noLogParam && body.p_log ? 0 : 5000);
     });
   }
   // text a sheet refused (the slide had moved on), kept on this phone so the table can still read it out to staff
@@ -817,6 +824,7 @@
       var boxes = [].filter.call(scope.querySelectorAll("textarea"), function (x) { return x._dirty && x._flush; });
       if (!boxes.length) { toast("Nothing new to save."); return; }
       boxes.forEach(function (x) { x._flush(); });
+      if (isStaff()) { S.sqLog = S.sqLog || {}; boxes.forEach(function (x) { var q = x.getAttribute("data-q"); if (q) S.sqLog[q] = true; }); }
       clearTimeout(S.sqTimer); flushSheets();
       // the merge pages rebuild their statement and agreed lists from what was just saved
       if (scope._view && scope.querySelector(".merge")) setTimeout(scope._view.redraw, 0);
@@ -2236,7 +2244,7 @@
   }
 
   // ----- download the data of this room (staff): an Excel file to read, and a full backup -----
-  var PAGE_VER = "20261126e";
+  var PAGE_VER = "20261126f";
   function exportCard() {
     var out = el("div"), card = el("div", { class: "ctl" }, el("h3", { text: "Download the data of this room (" + S.stage + ")" }),
       el("p", { class: "muted", style: "margin-top:0", text: "Everything saved in this room so far: every table, clinic and staff sheet, every personal answer (without who gave it; the database keeps no names) and the vote totals. The Excel file is for reading; the backup keeps the data exactly as stored." }));
