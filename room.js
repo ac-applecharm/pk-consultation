@@ -358,10 +358,17 @@
   }
   function drawView(v) {
     var f = document.activeElement, fk = f && v.node.contains(f) ? f.getAttribute("data-k") : null, y = window.scrollY;
-    [].forEach.call(v.node.querySelectorAll("textarea"), function (x) { if (x._flush) x._flush(); });
+    // unsaved typing is carried into the redrawn boxes, still unsaved, so it is neither lost nor saved without Save
+    var keep = {};
+    [].forEach.call(v.node.querySelectorAll("textarea"), function (x) { if (x._dirty) keep[x.getAttribute("data-q") + "#" + x.getAttribute("data-k")] = x.value; });
     clear(v.node);
     var n = null; try { n = v.draw(v.data, v); } catch (e) { console.error(e); n = el("p", { class: "muted", text: "This part could not be drawn." }); }
     if (n) v.node.appendChild(n);
+    [].forEach.call(v.node.querySelectorAll("textarea"), function (x) {
+      var id = x.getAttribute("data-q") + "#" + x.getAttribute("data-k");
+      if (id in keep && x._flush) { x.value = keep[id]; x._dirty = true; x.classList.add("unsaved"); }
+    });
+    updateSaveBars();
     if (fk) { var again = v.node.querySelector('[data-k="' + fk.replace(/"/g, '\\"') + '"]'); if (again) { try { again.focus({ preventScroll: true }); } catch (e) {} } }
     if (Math.abs(window.scrollY - y) > 2) window.scrollTo(0, y);
   }
@@ -615,10 +622,10 @@
     // shows older text never writes it over what another phone saved meanwhile.
     var t; node._dirty = false;
     var commit = function () { clearTimeout(t); if (!node._dirty) return; node._dirty = false; queueCell(act, sheet, k, node.value); if (col.onSaved) col.onSaved(); };
-    node.addEventListener("input", function () { node._dirty = true; });
-    // a redraw saves what is still waiting to be saved, so nothing typed is lost
-    node._flush = commit;
-    node.addEventListener("blur", function () { commit(); if (col.onBlur) col.onBlur(); });
+    node.addEventListener("input", function () { if (!node._dirty) { node._dirty = true; node.classList.add("unsaved"); updateSaveBars(); } });
+    // _flush is the Save button's (and the safety saves') way to save this box
+    node._flush = function () { var was = node._dirty; commit(); if (was) { node.classList.remove("unsaved"); } };
+    node.addEventListener("blur", function () { if (col.onBlur) col.onBlur(); });
     return node;
   }
   function regMinNode(code) {
@@ -734,7 +741,34 @@
     return sheetView(act, def, sheet, editable, v);
   }
   function sheetLive(act, sheet, editable) {
-    return liveView({ deps: depsOf(act), draw: function (d, v) { return viewFor(act, sheet, editable, v); } });
+    var live = liveView({ deps: depsOf(act), draw: function (d, v) { return viewFor(act, sheet, editable, v); } });
+    if (!editable) return live;
+    var wrap = el("div", { class: "savewrap" }, live);
+    wrap.appendChild(saveBar(wrap));
+    return wrap;
+  }
+  // Save: sends every box typed in since the last save, for this sheet. Ticks and lists save at once.
+  function saveBar(scope) {
+    var status = el("span", { class: "savestat" });
+    var btn = el("button", { type: "button", class: "btn small", text: "Save", onclick: function () {
+      var boxes = [].filter.call(scope.querySelectorAll("textarea"), function (x) { return x._dirty && x._flush; });
+      if (!boxes.length) { toast("Nothing new to save."); return; }
+      boxes.forEach(function (x) { x._flush(); });
+      clearTimeout(S.sqTimer); flushSheets();
+      toast(boxes.length === 1 ? "Saving 1 answer." : "Saving " + boxes.length + " answers.");
+      updateSaveBars();
+    } });
+    var bar = el("div", { class: "savebar" }, status, btn);
+    bar._scope = scope;
+    setTimeout(updateSaveBars, 0);
+    return bar;
+  }
+  function updateSaveBars() {
+    [].forEach.call(document.querySelectorAll(".savebar"), function (bar) {
+      var n = [].filter.call((bar._scope || document).querySelectorAll("textarea"), function (x) { return x._dirty; }).length;
+      bar.classList.toggle("dirty", n > 0);
+      bar.firstChild.textContent = n ? n + (n === 1 ? " box not saved yet. Press Save." : " boxes not saved yet. Press Save.") : "All typed answers are saved.";
+    });
   }
 
   // =====================================================================================
@@ -1654,7 +1688,7 @@
           setEncoder(mine, !enc);
         } })));
     }
-    sbox.appendChild(el("p", { class: "help", text: state === "open" ? (def.intro || "") + (enc ? " Your changes appear on the other phones within a few seconds." : " One phone at your " + grp + " types; this page updates by itself.") : "Not open." }));
+    sbox.appendChild(el("p", { class: "help", text: state === "open" ? (def.intro || "") + (enc ? " Press Save after typing; ticks and lists save at once. Saved answers appear on the other phones within a few seconds." : " One phone at your " + grp + " types; this page updates by itself.") : "Not open." }));
     sbox.appendChild(sheetLive(key, mine, enc));
     return sbox;
   }
@@ -2140,7 +2174,8 @@
     document.addEventListener("visibilitychange", function () { if (document.hidden) saveNow(); });
     window.addEventListener("pagehide", saveNow);
     window.addEventListener("beforeunload", function (e) {
-      if (!S.running || (!Object.keys(S.sq || {}).length && !(S.queue || []).length)) return;
+      var typing = [].some.call(document.querySelectorAll("textarea"), function (x) { return x._dirty; });
+      if (!S.running || (!typing && !Object.keys(S.sq || {}).length && !(S.queue || []).length)) return;
       e.preventDefault(); e.returnValue = "";
     });
   }

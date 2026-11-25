@@ -402,3 +402,10 @@ details.mdrop input { width: 18px; height: 18px; margin: 2px 0 0; flex: 0 0 auto
 .histmenu .histpanel { max-height: none; }
 .histval { white-space: pre-wrap; }
 @media (max-width: 520px) { .rchip.histbtn { padding: 6px 10px; font-size: 16px; } .rchip.histbtn .hlabel { display: none; } }
+
+/* ---- the Save bar under a sheet someone can type in ---- */
+.savebar { position: sticky; bottom: 10px; z-index: 6; display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 12px 0 4px; padding: 10px 12px; border-radius: 14px; background: var(--card); border: 1px solid var(--line); box-shadow: 0 6px 18px rgba(0, 0, 0, .12); }
+.savebar .savestat { font-size: 14px; color: var(--muted); }
+.savebar.dirty { border: 2px solid var(--warn-ink); background: var(--warn-bg); }
+.savebar.dirty .savestat { color: var(--warn-ink); font-weight: 700; }
+textarea.unsaved { border-color: var(--warn-ink); box-shadow: 0 0 0 1px var(--warn-ink); }
