@@ -254,7 +254,14 @@
         } else cur.body[x] = v;
       });
       cur.at = new Date().toISOString(); cur.by = whoLabel; R.sheets[k] = cur;
+      R.log = R.log || []; R.log.push({ activity: b.p_activity, sheet: b.p_sheet, patch: b.p_patch, by: whoLabel, at: cur.at });
       return { ok: true };
+    },
+    room_sheet_history: function (b, d) {
+      var a = who(b.p_code, ["staff"]);
+      if (!a) return { ok: false, reason: "invalid" };
+      var rows = (d[a.stage].log || []).filter(function (x) { return x.activity === b.p_activity && x.sheet === b.p_sheet; }).reverse().slice(0, 1000);
+      return { ok: true, rows: rows.map(function (x) { return { patch: x.patch, by: x.by, at: x.at }; }) };
     },
     room_table_spread: function (b, d) {
       var a = who(b.p_code, ["device", "participant"]);

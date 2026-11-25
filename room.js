@@ -379,7 +379,7 @@
     [].forEach.call(node.querySelectorAll("[data-k][data-q]"), function (inp) {
       if (inp === document.activeElement) return;
       var q = inp.getAttribute("data-q"), k = inp.getAttribute("data-k"), parts = q.split("|");
-      if (pendingCell(parts[0], parts[1], k)) return;
+      if (pendingCell(parts[0], parts[1], k) || inp._dirty) return;
       var v = sheetBody(parts[0], parts[1])[k];
       if (v === undefined) return;
       if (inp.type === "checkbox") inp.checked = !!v; else if (inp.type === "radio") inp.checked = String(v) === inp.value; else if (inp.value !== String(v)) inp.value = v;
@@ -477,7 +477,8 @@
       S.sqBusy = false;
       if (r.ok) { S.sqSaved = true; lsSet(sqKey(), Object.keys(S.sq).length ? S.sq : undefined); flushSheets(); return; }
       lsSet(sqKey(), Object.keys(S.sq).length ? S.sq : undefined);
-      toast(r.reason === "not_open" ? "The slide moved on. Your last change to the sheet was not saved." : "A change could not be saved (" + (r.reason || "unknown") + ").");
+      keepRefused(parts[0], parts[1], patch);
+      toast(r.reason === "not_open" ? "The slide moved on. Your last change was not saved; it is kept at the top of your page." : "A change could not be saved (" + (r.reason || "unknown") + ").");
       setSave("fail"); flushSheets();
     }).catch(function () {
       // put the patch back and try again later
@@ -489,6 +490,48 @@
       S.sq[q] = patch; lsSet(sqKey(), S.sq); setSave("queued");
       clearTimeout(S.sqTimer); S.sqTimer = setTimeout(flushSheets, 5000);
     });
+  }
+  // text a sheet refused (the slide had moved on), kept on this phone so the table can still read it out to staff
+  function refusedKey() { return "pk_room_refused_" + fnv(S.code + "|" + S.session); }
+  function keepRefused(act, sheet, patch) {
+    var list = lsGet(refusedKey()) || [];
+    Object.keys(patch || {}).forEach(function (k) {
+      var v = patch[k]; if (typeof v !== "string" || !v.trim()) return;
+      list.push({ act: act, sheet: sheet, k: k, text: v, at: Date.now() });
+    });
+    lsSet(refusedKey(), list.length ? list.slice(-30) : undefined);
+    if (S.role === "participant") { S.sig = ""; renderPart(true); }
+  }
+  function refusedCard() {
+    var list = lsGet(refusedKey()) || [];
+    if (!list.length) return null;
+    return el("section", { class: "apanel refused" }, el("h3", { text: "Not saved: the slide had moved on" }),
+      el("p", { class: "help", text: "This text did not reach the sheet. Read it out to your facilitator, who can still add it." }),
+      el("ul", null, list.map(function (x) { return el("li", null, el("b", { text: (SHEET_NAMES[x.sheet] || x.sheet) + " \u00B7 " + keyLabel(x.act, x.k) + ": " }), x.text); })),
+      el("button", { type: "button", class: "btn ghost small", text: "Dismiss", onclick: function () { lsSet(refusedKey(), undefined); S.sig = ""; renderPart(true); } }));
+  }
+  // a readable name for a sheet cell, for the history and the not-saved list
+  function keyLabel(act, k) {
+    var def = ACT[act] || {}, parts = String(k).split("."), pick = function (list, id) { return (list || []).filter(function (x) { return (x.id || x[0]) === id; })[0]; };
+    if (/\._(add|del)$/.test(k)) return "rows";
+    if (def.view === "choose") {
+      var cat = pick(AG.s2.cats, parts[1]);
+      if (parts[0] === "pk" && cat) return cat.name + ": choice";
+      if (parts[0] === "mix" && cat) return cat.name + ": own idea";
+      if (parts[0] === "pw" && cat) { var idea = pick(cat.ideas, parts[2]); return cat.name + ": " + (idea ? idea.text : parts[2]); }
+      if (parts[0] === "st") { var st = pick(AG.s2.stakes, parts[1]); var rl = pick(AG.s2.roles, parts[2]); return cap(st ? st[1] : parts[1]) + ": " + (parts[2] === "rem" ? "remarks" : parts[2] === "none" ? "no role" : (rl ? rl[1] : parts[2])); }
+      if (parts[0] === "ns") return "Added stakeholder: " + (parts[2] || "");
+      return k;
+    }
+    if (def.view === "test") { var cr = pick(AG.crit, parts[1]); return (cr ? cr[1] : parts[1]) + (parts[0] === "sc" ? ": score" : ": reason"); }
+    var sec = pick(sectionsFor(act, def), parts[0]);
+    if (sec && parts.length === 3) {
+      var col = pick(sec.cols, parts[2]);
+      var rowName = /^p\d+$/.test(parts[1]) && sec.preset ? sec.preset[+parts[1].slice(1)] : sec.fixedRows ? ((pick(sec.fixedRows, parts[1]) || [])[1]) : "added row";
+      return sec.title + " \u00B7 " + (rowName || "row") + " \u00B7 " + (col ? (col.short || col.label) : parts[2]);
+    }
+    if (sec && parts.length === 2) { var fd = pick(sec.fields, parts[1]); return sec.title + " \u00B7 " + (fd ? fd.label : parts[1]); }
+    return k;
   }
   function pendingCell(act, sheet, k) { var p = S.sq && S.sq[sheetKey(act, sheet)]; return !!(p && Object.prototype.hasOwnProperty.call(p, k)); }
   function loadSheets(act) {
@@ -562,10 +605,14 @@
     }
     if (!editable) return el("div", { class: "cellro", text: value == null ? "" : String(value) });
     node = el("textarea", { "data-k": k, "data-q": q, rows: "2", value: value == null ? "" : String(value), "aria-label": col.label, placeholder: col.placeholder || "" });
-    var t; node.addEventListener("input", function () { clearTimeout(t); t = setTimeout(function () { queueCell(act, sheet, k, node.value); if (col.onSaved) col.onSaved(); }, 600); });
+    // _dirty: this person typed here and it is not saved yet. Only typed text is ever saved, so a box that still
+    // shows older text never writes it over what another phone saved meanwhile.
+    var t; node._dirty = false;
+    var commit = function () { clearTimeout(t); if (!node._dirty) return; node._dirty = false; queueCell(act, sheet, k, node.value); if (col.onSaved) col.onSaved(); };
+    node.addEventListener("input", function () { node._dirty = true; clearTimeout(t); t = setTimeout(commit, 600); });
     // a redraw saves what is still waiting to be saved, so nothing typed is lost
-    node._flush = function () { clearTimeout(t); if (String(sheetBody(act, sheet)[k] == null ? "" : sheetBody(act, sheet)[k]) !== node.value) queueCell(act, sheet, k, node.value); };
-    node.addEventListener("blur", function () { clearTimeout(t); if (String(sheetBody(act, sheet)[k] == null ? "" : sheetBody(act, sheet)[k]) !== node.value) queueCell(act, sheet, k, node.value); if (col.onBlur) col.onBlur(); });
+    node._flush = commit;
+    node.addEventListener("blur", function () { commit(); if (col.onBlur) col.onBlur(); });
     return node;
   }
   function regMinNode(code) {
@@ -574,11 +621,11 @@
   }
   // the sections of a sheet; the Session 7 indicator sheets build theirs from what Session 6 agreed
   var IND_COLS = [
-    { id: "indicator", label: "What would show that the “how” is working?" },
-    { id: "calc", label: "How do we calculate or determine success? (for example, number of … divided by …)" },
+    { id: "indicator", short: "Indicator", label: "What would show that the “how” is working?" },
+    { id: "calc", short: "Calculation", label: "How do we calculate or determine success? (for example, number of … divided by …)" },
     { id: "level", label: "Level where it is measured", type: "multidrop", options: AG.levels },
     { id: "source", label: "Data source" },
-    { id: "use", label: "Who uses this indicator, and to decide what?" }];
+    { id: "use", short: "Who uses it", label: "Who uses this indicator, and to decide what?" }];
   function agreedFor(clinicSheet) { var a = sheetBody("s6_merge", "ROOM")["agreed." + clinicSheet]; return Array.isArray(a) ? a : []; }
   function sectionsFor(act, def) {
     if (def.view !== "ind") return def.sections || [];
@@ -932,8 +979,8 @@
       var fv = mb[k] || "";
       if (!editable) return el("div", { class: "finalro" + (clean(fv) ? "" : " muted"), text: clean(fv) || "Not agreed yet." });
       var ta = el("textarea", { "data-k": k, "data-q": q, rows: "2", value: fv, "aria-label": label, placeholder: placeholder });
-      var t0; ta.addEventListener("input", function () { clearTimeout(t0); t0 = setTimeout(function () { saveFinal(k, ta.value); }, 600); });
-      ta.addEventListener("blur", function () { clearTimeout(t0); if ((sheetBody("s2_merge", "ROOM")[k] || "") !== ta.value) saveFinal(k, ta.value); if (v) v.redraw(); });
+      var t0; ta.addEventListener("input", function () { ta._dirty = true; clearTimeout(t0); t0 = setTimeout(function () { ta._dirty = false; saveFinal(k, ta.value); }, 600); });
+      ta.addEventListener("blur", function () { clearTimeout(t0); if (ta._dirty) { ta._dirty = false; saveFinal(k, ta.value); } if (v) v.redraw(); });
       return ta;
     }
     function useBtn(k, text, label) { return el("button", { type: "button", class: "linkbtn", text: label || "Use this", onclick: function () { saveFinal(k, text); if (v) v.redraw(); } }); }
@@ -1067,8 +1114,8 @@
           var hk = "fh." + r.key, wk = "fw." + r.key;
           function ta(k, label) {
             var t = el("textarea", { "data-k": k, "data-q": q, rows: "2", value: mb[k] || "", "aria-label": label }), tm;
-            t.addEventListener("input", function () { clearTimeout(tm); tm = setTimeout(function () { save(k, t.value); }, 600); });
-            t.addEventListener("blur", function () { clearTimeout(tm); if ((sheetBody("s6_merge", "ROOM")[k] || "") !== t.value) save(k, t.value); if (v) v.redraw(); });
+            t.addEventListener("input", function () { t._dirty = true; clearTimeout(tm); tm = setTimeout(function () { t._dirty = false; save(k, t.value); }, 600); });
+            t.addEventListener("blur", function () { clearTimeout(tm); if (t._dirty) { t._dirty = false; save(k, t.value); } if (v) v.redraw(); });
             return t;
           }
           var ans = el("td", { class: "small" }, r.how ? el("div", null, el("b", { text: "How: " }), r.how) : el("div", { class: "muted", text: "No answer" }),
@@ -1133,8 +1180,8 @@
           var td = el("td", { class: "final" });
           if (!editable) { td.appendChild(el("div", { class: "finalro" + (clean(mb[k]) ? "" : " muted"), text: clean(mb[k]) || "\u2014" })); return td; }
           var t = el("textarea", { "data-k": k, "data-q": q, rows: "2", value: mb[k] || "", "aria-label": label }), tm;
-          t.addEventListener("input", function () { clearTimeout(tm); tm = setTimeout(function () { save(k, t.value); }, 600); });
-          t.addEventListener("blur", function () { clearTimeout(tm); if ((sheetBody("s7_merge", "ROOM")[k] || "") !== t.value) save(k, t.value); if (v) v.redraw(); });
+          t.addEventListener("input", function () { t._dirty = true; clearTimeout(tm); tm = setTimeout(function () { t._dirty = false; save(k, t.value); }, 600); });
+          t.addEventListener("blur", function () { clearTimeout(tm); if (t._dirty) { t._dirty = false; save(k, t.value); } if (v) v.redraw(); });
           td.appendChild(t);
           td.appendChild(el("div", { class: "row tight" },
             copyText ? el("button", { type: "button", class: "linkbtn", text: "Copy", onclick: function () { save(k, copyText); if (v) v.redraw(); } }) : null,
@@ -1381,7 +1428,8 @@
     if (!force && sig === S.sig) return;
     S.sig = sig;
     var view = resetView(), s = curSlide();
-    var any = false;
+    var any = false, rc = refusedCard();
+    if (rc) view.appendChild(rc);
     if (s) {
       (s.shown || []).forEach(function (k) { view.appendChild(shownPanel(k)); any = true; });
       var acts = slideActs(s), clinics = acts.filter(function (k) { return ACT[k] && ACT[k].clinic; });
@@ -1553,6 +1601,13 @@
     else box.appendChild(el("p", { class: "help", style: "margin:0", text: "Your facilitator will share the evaluation link or QR code." }));
     return box;
   }
+  // which sheets this person types for (one phone per table or clinic); kept per person on this device
+  function encKey() { return "pk_room_enc_" + fnv(S.code + "|" + S.session); }
+  function isEncoder(sheet) { var m = lsGet(encKey()) || {}; return !!m[sheet]; }
+  function setEncoder(sheet, on) {
+    var m = lsGet(encKey()) || {}; if (on) m[sheet] = true; else delete m[sheet];
+    lsSet(encKey(), m); S.sig = ""; renderPart(true);
+  }
   function sheetPanel(key, def, mine) {
     var state = actState(key);
     var sbox = el("section", { class: "apanel sheetpanel" + (state === "open" ? "" : " locked") });
@@ -1564,8 +1619,17 @@
       sbox.appendChild(presentedLive(s, key, pick));
       return sbox;
     }
-    sbox.appendChild(el("p", { class: "help", text: state === "open" ? (def.intro || "") + " Anyone at the " + (def.clinic ? "clinic" : "table") + " can type here; changes appear on the other phones within a few seconds." : "Not open." }));
-    sbox.appendChild(sheetLive(key, mine, state === "open"));
+    var enc = state === "open" && isEncoder(mine), nm = SHEET_NAMES[mine] || "your table", grp = def.clinic ? "clinic" : "table";
+    if (state === "open") {
+      sbox.appendChild(el("div", { class: "encbar" + (enc ? " on" : "") },
+        el("span", { text: enc ? "This phone types for " + nm + "." : "View only: you see " + nm + "\u2019s sheet as it is filled in." }),
+        el("button", { type: "button", class: "btn small" + (enc ? " ghost" : ""), text: enc ? "Switch to view only" : "I type for " + nm, onclick: function () {
+          if (!enc && !confirm("Only one phone per " + grp + " should type. Type for " + nm + " on this phone?")) return;
+          setEncoder(mine, !enc);
+        } })));
+    }
+    sbox.appendChild(el("p", { class: "help", text: state === "open" ? (def.intro || "") + (enc ? " Your changes appear on the other phones within a few seconds." : " One phone at your " + grp + " types; this page updates by itself.") : "Not open." }));
+    sbox.appendChild(sheetLive(key, mine, enc));
     return sbox;
   }
   // one clinic per person, chosen on the phone (Session 6 and Session 7 use the same choice)
@@ -1720,6 +1784,8 @@
   }
   function showResults(on) {
     var s = curSlide(); if (!s) return;
+    if (on && sheetActsOf(s).some(function (k) { return actState(k) === "open"; }) &&
+        !confirm("Tables can no longer type while the results are shown. Show the results now?")) return;
     var acts = {}; slideActs(s).forEach(function (k) { acts[k] = on ? "revealed" : "open"; });
     var settings = {}; if (on) settings.present = slideSheets(s)[0] || "";
     staffSet({ acts: acts, settings: settings });
@@ -1733,7 +1799,7 @@
   function renderStaff(force) {
     var tab = S.tab;
     if (tab !== "slides" && tab !== "registers") { if (force) { resetView(); ({ paper: tabPaper, settings: tabSettings })[tab]($("view")); } return; }
-    var sig = [tab, S.st.slide_id, JSON.stringify(S.st.acts), JSON.stringify(S.st.settings), S.st.timer_end, S.openSheet, S.openReg, S.d10Each, S.pollDraft].join("~");
+    var sig = [tab, S.st.slide_id, JSON.stringify(S.st.acts), JSON.stringify(S.st.settings), S.st.timer_end, S.openSheet, S.openReg, S.d10Each, S.pollDraft, S.histOpen].join("~");
     if (!force && sig === S.sig) return;
     // someone typing in a staff box keeps their text: redraw once they leave it
     var a = document.activeElement;
@@ -1795,6 +1861,34 @@
     });
     view.appendChild(lst);
   }
+  // every change saved to one sheet, newest first (18_room_sheet_log.sql); staff can put back any earlier text
+  function historyPanel(act, sheet) {
+    var box = el("div", { class: "histpanel" }, el("p", { class: "muted small", text: "Loading the history\u2026" }));
+    var show = function (val) { return Array.isArray(val) ? val.join(", ") : val === true ? "ticked" : val === false ? "unticked" : String(val == null ? "" : val); };
+    rpc("room_sheet_history", { p_code: S.code, p_activity: act, p_sheet: sheet }).then(function (r) {
+      clear(box);
+      if (!r.ok) { box.appendChild(el("p", { class: "muted small", text: "The history is not available (" + (r.reason || "error") + ")." })); return; }
+      box.appendChild(el("div", { class: "row tight" }, el("b", { text: "History: " + r.rows.length + " saved changes" }),
+        el("button", { type: "button", class: "linkbtn", text: "Refresh", onclick: function () { box.replaceWith(historyPanel(act, sheet)); } })));
+      if (!r.rows.length) { box.appendChild(el("p", { class: "muted small", text: "No changes saved yet." })); return; }
+      var list = el("ol", { class: "histlist" });
+      r.rows.forEach(function (row) {
+        var when = new Date(row.at), time = ("0" + when.getHours()).slice(-2) + ":" + ("0" + when.getMinutes()).slice(-2) + ":" + ("0" + when.getSeconds()).slice(-2);
+        Object.keys(row.patch || {}).forEach(function (k) {
+          var val = row.patch[k], isRows = /\._(add|del)$/.test(k);
+          var li = el("li", null, el("span", { class: "muted", text: time + " \u00B7 " + (row.by || "") + " \u00B7 " }), el("b", { text: keyLabel(act, k) + ": " }),
+            isRows ? (k.slice(-4) === "_add" ? "row added" : "row removed") : (show(val) || el("i", { class: "muted", text: "(emptied)" })));
+          if (!isRows) li.appendChild(el("button", { type: "button", class: "linkbtn", text: "Restore", onclick: function () {
+            if (!confirm("Put this back in the sheet?\n\n" + keyLabel(act, k) + ": " + show(val))) return;
+            queueCell(act, sheet, k, val); toast("Restored."); renderStaff(true);
+          } }));
+          list.appendChild(li);
+        });
+      });
+      box.appendChild(list);
+    }).catch(function (e) { clear(box); box.appendChild(el("p", { class: "muted small", text: errText(e) })); });
+    return box;
+  }
   function slideStaff(s, box) {
     box.appendChild(el("h3", { text: s.title }));
     if (!slideActs(s).length && !(s.shown || []).length) box.appendChild(el("p", { class: "muted", text: "Nothing on phones for this slide; phones show the waiting screen. " + (s.id === "s5_1" ? "Run the recap in plenary, with a show of hands if anything is contested." : "") }));
@@ -1827,7 +1921,10 @@
       box.appendChild(srow);
       if (S.openSheet && sheets.indexOf(S.openSheet.split("|")[0]) >= 0) {
         var os = S.openSheet.split("|");
-        box.appendChild(el("div", { class: "staffsheet" }, el("h4", { text: SHEET_NAMES[os[1]] + " · staff can edit at any time" }), sheetLive(os[0], os[1], true)));
+        var hOn = S.histOpen === S.openSheet;
+        box.appendChild(el("div", { class: "staffsheet" }, el("div", { class: "row tight" }, el("h4", { style: "margin:0", text: SHEET_NAMES[os[1]] + " \u00B7 staff can edit at any time" }),
+          el("button", { type: "button", class: "btn ghost small", text: hOn ? "Hide history" : "History of this sheet", onclick: function () { S.histOpen = hOn ? null : S.openSheet; renderStaff(true); } })),
+          hOn ? historyPanel(os[0], os[1]) : null, sheetLive(os[0], os[1], true)));
       }
     }
     slideActs(s).forEach(function (k) {
@@ -2010,7 +2107,13 @@
     });
     document.addEventListener("click", function () { [].forEach.call(document.querySelectorAll(".menu"), function (m) { m.remove(); }); });
   }
-  function boot() { bind(); resume(); }
+  function boot() {
+    bind(); resume();
+    window.addEventListener("beforeunload", function (e) {
+      if (!S.running || (!Object.keys(S.sq || {}).length && !(S.queue || []).length)) return;
+      e.preventDefault(); e.returnValue = "";
+    });
+  }
   if (MOCK) {
     var s = document.createElement("script"); s.src = "dev-room.js"; s.onload = boot; s.onerror = boot; document.head.appendChild(s);
   } else boot();

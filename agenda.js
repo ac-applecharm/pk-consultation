@@ -139,7 +139,7 @@ window.PK_AGENDA = (function () {
   var D9_COLS = [
     { id: "element", label: "Element" },
     { id: "class", label: "Core, adaptable or not yet settled", type: "select", options: ["Core", "Adaptable", "Not yet settled"] },
-    { id: "why", label: "If core: why it must be the same everywhere. If adaptable: what may change, who decides, and within what limits" },
+    { id: "why", short: "Reason", label: "If core: why it must be the same everywhere. If adaptable: what may change, who decides, and within what limits" },
     { id: "una", label: "UNA pillar(s)", type: "multidrop", options: PILLARS },
     { id: "rem", label: "Remarks" }];
   var D9_AREAS = [
