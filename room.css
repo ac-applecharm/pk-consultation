@@ -114,7 +114,7 @@ body.proj .rchip.late { color: var(--err-ink); }
 body.proj #menuBtn { display: none; }
 .standby { text-align: center; padding: 120px 20px; font-size: 34px; font-family: var(--serif); }
 #toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); background: var(--primary); color: var(--primary-ink); padding: 12px 20px; border-radius: 999px; font-size: 16px; z-index: 30; max-width: calc(100vw - 32px); }
-.menu { position: absolute; right: 16px; top: 62px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 8px; z-index: 12; min-width: 220px; box-shadow: 0 8px 26px rgba(0, 0, 0, .2); }
+.menu { position: fixed; right: 16px; top: 70px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 8px; z-index: 12; min-width: 220px; box-shadow: 0 8px 26px rgba(0, 0, 0, .2); }
 .menu button { display: block; width: 100%; text-align: left; font: inherit; padding: 10px 12px; border: 0; background: none; color: var(--ink); border-radius: 10px; cursor: pointer; min-height: 44px; }
 .menu button:hover { background: var(--soft); }
 
@@ -409,3 +409,7 @@ details.mdrop input { width: 18px; height: 18px; margin: 2px 0 0; flex: 0 0 auto
 .savebar.dirty { border: 2px solid var(--warn-ink); background: var(--warn-bg); }
 .savebar.dirty .savestat { color: var(--warn-ink); font-weight: 700; }
 textarea.unsaved { border-color: var(--warn-ink); box-shadow: 0 0 0 1px var(--warn-ink); }
+
+/* ---- menus and panels open on the viewer's screen, under the sticky header, wherever the page is scrolled ---- */
+body.trial .menu { top: calc(var(--ribbon-h, 44px) + 70px); }
+.histmenu, .chippanel { max-height: calc(100vh - 100px); overflow-y: auto; }
