@@ -394,3 +394,11 @@ details.mdrop input { width: 18px; height: 18px; margin: 2px 0 0; flex: 0 0 auto
 .histlist { margin: 6px 0 0; padding-left: 20px; font-size: 14px; }
 .histlist li { margin: 0 0 6px; }
 .histlist .linkbtn { margin-left: 8px; }
+
+/* ---- phones: the history of the table's sheet, from the header ---- */
+.rchip.histbtn { border: 0; cursor: pointer; font: inherit; font-size: 13px; font-weight: 600; }
+.histmenu { left: 12px; right: 12px; max-width: 640px; margin-left: auto; max-height: 75vh; overflow-y: auto; padding: 14px 16px; }
+.histmenu h3 { font-size: 16px; margin: 4px 30px 6px 0; }
+.histmenu .histpanel { max-height: none; }
+.histval { white-space: pre-wrap; }
+@media (max-width: 520px) { .rchip.histbtn { padding: 6px 10px; font-size: 16px; } .rchip.histbtn .hlabel { display: none; } }

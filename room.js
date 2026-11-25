@@ -274,6 +274,11 @@
     $("gate").hidden = true; $("app").hidden = false; S.running = true;
     document.body.classList.toggle("proj", isProj());
     $("roleChip").hidden = false; $("menuBtn").hidden = false;
+    if (S.role === "participant" && !$("histBtn")) {
+      var hb = el("button", { type: "button", id: "histBtn", class: "rchip histbtn", hidden: true, title: "History of your table's sheet", "aria-label": "History of your table's sheet" }, "\u21BA", el("span", { class: "hlabel", text: " History" }));
+      hb.addEventListener("click", function (e) { e.stopPropagation(); toggleHistory(); });
+      $("roleChip").parentNode.insertBefore(hb, $("roleChip"));
+    }
     if (S.role === "participant") {
       var chip = $("roleChip");
       chip.classList.add("chipbtn"); chip.setAttribute("role", "button"); chip.setAttribute("tabindex", "0");
@@ -396,7 +401,8 @@
     if (!S.running || !S.st) return;
     if (isStaff()) renderStaff(); else if (isProj()) renderProj(); else renderPart();
   }
-  function resetView() { S.views = []; S.marks = {}; return clear($("view")); }
+  function saveTyped() { [].forEach.call(document.querySelectorAll("#view textarea"), function (x) { if (x._dirty && x._flush) x._flush(); }); }
+  function resetView() { saveTyped(); S.views = []; S.marks = {}; return clear($("view")); }
   function buildTabs() {
     var nav = $("tabs"); clear(nav); nav.hidden = !isStaff();
     if (!isStaff()) return;
@@ -609,7 +615,7 @@
     // shows older text never writes it over what another phone saved meanwhile.
     var t; node._dirty = false;
     var commit = function () { clearTimeout(t); if (!node._dirty) return; node._dirty = false; queueCell(act, sheet, k, node.value); if (col.onSaved) col.onSaved(); };
-    node.addEventListener("input", function () { node._dirty = true; clearTimeout(t); t = setTimeout(commit, 600); });
+    node.addEventListener("input", function () { node._dirty = true; });
     // a redraw saves what is still waiting to be saved, so nothing typed is lost
     node._flush = commit;
     node.addEventListener("blur", function () { commit(); if (col.onBlur) col.onBlur(); });
@@ -1441,6 +1447,7 @@
       }
     }
     if (!any) view.appendChild(waitCard());
+    if ($("histBtn")) $("histBtn").hidden = !mySheetsNow().length;
   }
   function render2() { S.sig = ""; renderPart(true); window.scrollTo(0, 0); }
   // a staff sheet shown on this slide (read-only on phones)
@@ -1577,6 +1584,25 @@
     needs.addEventListener("input", function () { v.needs = needs.value; update(true); });
     update(false);
     return box;
+  }
+  // the sheets this phone belongs to on the current slide (its table's sheet, or its clinic's)
+  function mySheetsNow() {
+    var s = curSlide(), out = [];
+    sheetActsOf(s).forEach(function (k) { var mine = mySheetFor(ACT[k]); if (mine && actState(k) !== "none") out.push({ act: k, sheet: mine }); });
+    return out;
+  }
+  function toggleHistory() {
+    var old = document.querySelector(".histmenu"); if (old) { old.remove(); return; }
+    [].forEach.call(document.querySelectorAll(".menu"), function (m) { m.remove(); });
+    var list = mySheetsNow(), panel = el("div", { class: "menu histmenu", role: "dialog", "aria-label": "History of your table's sheet" });
+    panel.appendChild(el("button", { type: "button", class: "jclose", "aria-label": "Close", text: "\u00D7", onclick: function () { panel.remove(); } }));
+    if (!list.length) panel.appendChild(el("p", { class: "muted", text: "No sheet on this slide." }));
+    list.forEach(function (x) {
+      panel.appendChild(el("h3", { text: SHEET_NAMES[x.sheet] + ": " + ACT[x.act].title }));
+      panel.appendChild(historyPanel(x.act, x.sheet, isEncoder(x.sheet) && actState(x.act) === "open"));
+    });
+    panel.addEventListener("click", function (e) { e.stopPropagation(); });
+    document.body.appendChild(panel);
   }
   // the check-in details open from the table chip in the header
   function toggleCheckin() {
@@ -1862,14 +1888,14 @@
     view.appendChild(lst);
   }
   // every change saved to one sheet, newest first (18_room_sheet_log.sql); staff can put back any earlier text
-  function historyPanel(act, sheet) {
+  function historyPanel(act, sheet, canRestore) {
     var box = el("div", { class: "histpanel" }, el("p", { class: "muted small", text: "Loading the history\u2026" }));
     var show = function (val) { return Array.isArray(val) ? val.join(", ") : val === true ? "ticked" : val === false ? "unticked" : String(val == null ? "" : val); };
-    rpc("room_sheet_history", { p_code: S.code, p_activity: act, p_sheet: sheet }).then(function (r) {
+    rpc("room_sheet_history", { p_code: S.code, p_session: S.session || null, p_activity: act, p_sheet: sheet }).then(function (r) {
       clear(box);
       if (!r.ok) { box.appendChild(el("p", { class: "muted small", text: "The history is not available (" + (r.reason || "error") + ")." })); return; }
       box.appendChild(el("div", { class: "row tight" }, el("b", { text: "History: " + r.rows.length + " saved changes" }),
-        el("button", { type: "button", class: "linkbtn", text: "Refresh", onclick: function () { box.replaceWith(historyPanel(act, sheet)); } })));
+        el("button", { type: "button", class: "linkbtn", text: "Refresh", onclick: function () { box.replaceWith(historyPanel(act, sheet, canRestore)); } })));
       if (!r.rows.length) { box.appendChild(el("p", { class: "muted small", text: "No changes saved yet." })); return; }
       var list = el("ol", { class: "histlist" });
       r.rows.forEach(function (row) {
@@ -1877,10 +1903,11 @@
         Object.keys(row.patch || {}).forEach(function (k) {
           var val = row.patch[k], isRows = /\._(add|del)$/.test(k);
           var li = el("li", null, el("span", { class: "muted", text: time + " \u00B7 " + (row.by || "") + " \u00B7 " }), el("b", { text: keyLabel(act, k) + ": " }),
-            isRows ? (k.slice(-4) === "_add" ? "row added" : "row removed") : (show(val) || el("i", { class: "muted", text: "(emptied)" })));
-          if (!isRows) li.appendChild(el("button", { type: "button", class: "linkbtn", text: "Restore", onclick: function () {
+            isRows ? (k.slice(-4) === "_add" ? "row added" : "row removed") : (show(val) ? el("span", { class: "histval", text: show(val) }) : el("i", { class: "muted", text: "(emptied)" })));
+          if (!isRows && canRestore) li.appendChild(el("button", { type: "button", class: "linkbtn", text: "Restore", onclick: function () {
             if (!confirm("Put this back in the sheet?\n\n" + keyLabel(act, k) + ": " + show(val))) return;
-            queueCell(act, sheet, k, val); toast("Restored."); renderStaff(true);
+            queueCell(act, sheet, k, val); toast("Restored.");
+            if (isStaff()) renderStaff(true); else { S.sig = ""; renderPart(true); }
           } }));
           list.appendChild(li);
         });
@@ -1924,7 +1951,7 @@
         var hOn = S.histOpen === S.openSheet;
         box.appendChild(el("div", { class: "staffsheet" }, el("div", { class: "row tight" }, el("h4", { style: "margin:0", text: SHEET_NAMES[os[1]] + " \u00B7 staff can edit at any time" }),
           el("button", { type: "button", class: "btn ghost small", text: hOn ? "Hide history" : "History of this sheet", onclick: function () { S.histOpen = hOn ? null : S.openSheet; renderStaff(true); } })),
-          hOn ? historyPanel(os[0], os[1]) : null, sheetLive(os[0], os[1], true)));
+          hOn ? historyPanel(os[0], os[1], true) : null, sheetLive(os[0], os[1], true)));
       }
     }
     slideActs(s).forEach(function (k) {
@@ -2109,6 +2136,9 @@
   }
   function boot() {
     bind(); resume();
+    var saveNow = function () { if (!S.running) return; saveTyped(); clearTimeout(S.sqTimer); flushSheets(); };
+    document.addEventListener("visibilitychange", function () { if (document.hidden) saveNow(); });
+    window.addEventListener("pagehide", saveNow);
     window.addEventListener("beforeunload", function (e) {
       if (!S.running || (!Object.keys(S.sq || {}).length && !(S.queue || []).length)) return;
       e.preventDefault(); e.returnValue = "";

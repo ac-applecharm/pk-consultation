@@ -258,8 +258,12 @@
       return { ok: true };
     },
     room_sheet_history: function (b, d) {
-      var a = who(b.p_code, ["staff"]);
+      var a = who(b.p_code, ["staff", "participant"]);
       if (!a) return { ok: false, reason: "invalid" };
+      if (a.role === "participant") {
+        var mem = d[a.stage].members[b.p_session]; if (!mem) return { ok: false, reason: "not_joined" };
+        if (!(b.p_sheet === "T" + mem.table_no || /^C[123]$/.test(b.p_sheet))) return { ok: false, reason: "not_your_sheet" };
+      }
       var rows = (d[a.stage].log || []).filter(function (x) { return x.activity === b.p_activity && x.sheet === b.p_sheet; }).reverse().slice(0, 1000);
       return { ok: true, rows: rows.map(function (x) { return { patch: x.patch, by: x.by, at: x.at }; }) };
     },
