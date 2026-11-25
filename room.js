@@ -419,7 +419,7 @@
       if (pendingCell(parts[0], parts[1], k) || inp._dirty) return;
       var v = sheetBody(parts[0], parts[1])[k];
       if (v === undefined) return;
-      if (inp.type === "checkbox") inp.checked = !!v; else if (inp.type === "radio") inp.checked = String(v) === inp.value; else if (inp.value !== String(v)) inp.value = v;
+      if (inp.type === "checkbox") inp.checked = !!v; else if (inp.type === "radio") inp.checked = String(v) === inp.value; else if (inp.value !== String(v)) { inp.value = v; fitBox(inp); }
     });
   }
   function refreshLive() {
@@ -561,6 +561,29 @@
       if (parts[0] === "ns") { var rl2 = pick(AG.s2.roles, parts[2]); return "Added stakeholder: " + (parts[2] === "name" ? "name" : parts[2] === "rem" ? "remarks" : parts[2] === "none" ? "no role" : (rl2 ? rl2[1] : parts[2])); }
       return k;
     }
+    var rest = String(k).slice(parts[0].length + 1), findIn = function (lists) { for (var i = 0; i < lists.length; i++) { var hit = lists[i].rows.filter(function (r) { return r.key === rest; })[0]; if (hit) return { list: lists[i], row: hit }; } return null; };
+    if (def.view === "merge2") {
+      if (k === "statement") return "The merged statement";
+      if (parts[0] === "f" && parts[1] === "cat") { var c2 = pick(AG.s2.cats, parts[2]); return (c2 ? c2.name : parts[2]) + ": final agreed"; }
+      if (parts[0] === "f" && parts[1] === "st") { var s2 = pick(AG.s2.stakes, parts[2]); return cap(s2 ? s2[1] : parts[2]) + ": agreed roles"; }
+      if (parts[0] === "f" && parts[1] === "ns") { var nn = clean(sheetBody("s2_choose", parts[2])["ns." + parts[3] + ".name"]); return "Added stakeholder" + (nn ? " (" + nn + ")" : "") + ": agreed roles"; }
+      return k;
+    }
+    if (def.view === "merge6") {
+      var h6 = findIn([1, 2, 3].map(clinicRows)), w6 = { fh: "agreed how", fw: "agreed: who will implement" }[parts[0]];
+      if (h6 && w6) return SHEET_NAMES[h6.list.sheet] + " \u00B7 " + (h6.row.q || h6.row.topic) + ": " + w6;
+      return k;
+    }
+    if (def.view === "merge7") {
+      var h7 = findIn([1, 2, 3].map(indRows)), w7 = { fi: "agreed indicator", fc: "agreed calculation", fl: "agreed level, data source and user" }[parts[0]];
+      if (h7 && w7) return SHEET_NAMES[h7.list.sheet] + " \u00B7 " + h7.row.comp + (h7.row.ind ? " (" + h7.row.ind + ")" : "") + ": " + w7;
+      return k;
+    }
+    if (def.view === "merge3") {
+      var h3 = findIn(d9Rows()), w3 = { fc: "agreed core, adaptable or not yet settled", fw: "agreed reason", fp: "agreed UNA pillars" }[parts[0]];
+      if (h3 && w3) return h3.row.name + ": " + w3;
+      return k;
+    }
     if (def.view === "test") { var cr = pick(AG.crit, parts[1]); return (cr ? cr[1] : parts[1]) + (parts[0] === "sc" ? ": score" : ": reason"); }
     var sec = pick(sectionsFor(act, def), parts[0]);
     if (sec && parts.length === 3) {
@@ -652,6 +675,19 @@
     node._flush = function () { var was = node._dirty; commit(); if (was) { node.classList.remove("unsaved"); } };
     node.addEventListener("blur", function () { if (col.onBlur) col.onBlur(); });
     return node;
+  }
+  // a typed box for the merge pages: typing marks it unsaved; Save (or a safety save) calls onSave
+  function typedBox(k, q, value, label, placeholder, onSave) {
+    var t = el("textarea", { "data-k": k, "data-q": q, rows: "2", value: value == null ? "" : String(value), "aria-label": label, placeholder: placeholder || "" });
+    t._dirty = false;
+    t.addEventListener("input", function () { if (!t._dirty) { t._dirty = true; t.classList.add("unsaved"); updateSaveBars(); } });
+    t._flush = function () { if (!t._dirty) return; t._dirty = false; t.classList.remove("unsaved"); onSave(t.value); };
+    return t;
+  }
+  // a Copy / Use button puts its text in the box (replacing anything unsaved there) before it saves
+  function fillBox(root, k, val) {
+    var t = root && root.querySelector('textarea[data-k="' + k + '"]'); if (!t) return;
+    t.value = Array.isArray(val) ? val.join(", ") : (val == null ? "" : String(val)); t._dirty = false; t.classList.remove("unsaved"); fitBox(t); updateSaveBars();
   }
   function regMinNode(code) {
     var m = regionMin(code); if (!m) return el("div", { class: "regmin" });
@@ -770,6 +806,7 @@
     var live = liveView({ deps: depsOf(act), draw: function (d, v) { return viewFor(act, sheet, editable, v); } });
     if (!editable) return live;
     var wrap = el("div", { class: "savewrap" }, live);
+    wrap._view = S.views[S.views.length - 1];
     wrap.appendChild(saveBar(wrap));
     return wrap;
   }
@@ -781,6 +818,8 @@
       if (!boxes.length) { toast("Nothing new to save."); return; }
       boxes.forEach(function (x) { x._flush(); });
       clearTimeout(S.sqTimer); flushSheets();
+      // the merge pages rebuild their statement and agreed lists from what was just saved
+      if (scope._view && scope.querySelector(".merge")) setTimeout(scope._view.redraw, 0);
       toast(boxes.length === 1 ? "Saving 1 answer." : "Saving " + boxes.length + " answers.");
       updateSaveBars();
     } });
@@ -1044,12 +1083,9 @@
     function finalBox(k, label, placeholder) {
       var fv = mb[k] || "";
       if (!editable) return el("div", { class: "finalro" + (clean(fv) ? "" : " muted"), text: clean(fv) || "Not agreed yet." });
-      var ta = el("textarea", { "data-k": k, "data-q": q, rows: "2", value: fv, "aria-label": label, placeholder: placeholder });
-      var t0; ta.addEventListener("input", function () { ta._dirty = true; clearTimeout(t0); t0 = setTimeout(function () { ta._dirty = false; saveFinal(k, ta.value); }, 600); });
-      ta.addEventListener("blur", function () { clearTimeout(t0); if (ta._dirty) { ta._dirty = false; saveFinal(k, ta.value); } if (v) v.redraw(); });
-      return ta;
+      return typedBox(k, q, fv, label, placeholder, function (val) { saveFinal(k, val); });
     }
-    function useBtn(k, text, label) { return el("button", { type: "button", class: "linkbtn", text: label || "Use this", onclick: function () { saveFinal(k, text); if (v) v.redraw(); } }); }
+    function useBtn(k, text, label) { return el("button", { type: "button", class: "linkbtn", text: label || "Use this", onclick: function () { fillBox(box, k, text); saveFinal(k, text); if (v) v.redraw(); } }); }
     function pollBox(key, question, opts) {
       var w = el("div");
       if (!editable) return w;
@@ -1179,17 +1215,14 @@
           if (r.added && !r.how && !r.q) return;
           var hk = "fh." + r.key, wk = "fw." + r.key;
           function ta(k, label) {
-            var t = el("textarea", { "data-k": k, "data-q": q, rows: "2", value: mb[k] || "", "aria-label": label }), tm;
-            t.addEventListener("input", function () { t._dirty = true; clearTimeout(tm); tm = setTimeout(function () { t._dirty = false; save(k, t.value); }, 600); });
-            t.addEventListener("blur", function () { clearTimeout(tm); if (t._dirty) { t._dirty = false; save(k, t.value); } if (v) v.redraw(); });
-            return t;
+            return typedBox(k, q, mb[k] || "", label, "", function (val) { save(k, val); });
           }
           var ans = el("td", { class: "small" }, r.how ? el("div", null, el("b", { text: "How: " }), r.how) : el("div", { class: "muted", text: "No answer" }),
             r.decide ? el("div", null, el("b", { text: "Still to decide: " }), r.decide) : null, r.who ? el("div", null, el("b", { text: "Who: " }), r.who) : null);
           // each agreed column has its own Copy and Push to poll
           function finCol(k, label, copyText, copyLabel, pollKey, pollQ) {
             var td = el("td", { class: "final" }, ta(k, label), el("div", { class: "row tight" },
-              copyText ? el("button", { type: "button", class: "linkbtn", text: copyLabel, onclick: function () { save(k, copyText); if (v) v.redraw(); } }) : null,
+              copyText ? el("button", { type: "button", class: "linkbtn", text: copyLabel, onclick: function () { fillBox(box, k, copyText); save(k, copyText); if (v) v.redraw(); } }) : null,
               el("button", { type: "button", class: "linkbtn", text: "Push to poll", onclick: function () { S.pollDraft = pollKey; if (v) v.redraw(); } })));
             if (S.pollDraft === pollKey) td.appendChild(pollDraftForm(pollQ(), ["Agree", "Change it", "Leave out"], v));
             return td;
@@ -1245,12 +1278,9 @@
         function col(k, label, copyText, pollKey, pollQ) {
           var td = el("td", { class: "final" });
           if (!editable) { td.appendChild(el("div", { class: "finalro" + (clean(mb[k]) ? "" : " muted"), text: clean(mb[k]) || "\u2014" })); return td; }
-          var t = el("textarea", { "data-k": k, "data-q": q, rows: "2", value: mb[k] || "", "aria-label": label }), tm;
-          t.addEventListener("input", function () { t._dirty = true; clearTimeout(tm); tm = setTimeout(function () { t._dirty = false; save(k, t.value); }, 600); });
-          t.addEventListener("blur", function () { clearTimeout(tm); if (t._dirty) { t._dirty = false; save(k, t.value); } if (v) v.redraw(); });
-          td.appendChild(t);
+          td.appendChild(typedBox(k, q, mb[k] || "", label, "", function (val) { save(k, val); }));
           td.appendChild(el("div", { class: "row tight" },
-            copyText ? el("button", { type: "button", class: "linkbtn", text: "Copy", onclick: function () { save(k, copyText); if (v) v.redraw(); } }) : null,
+            copyText ? el("button", { type: "button", class: "linkbtn", text: "Copy", onclick: function () { fillBox(box, k, copyText); save(k, copyText); if (v) v.redraw(); } }) : null,
             el("button", { type: "button", class: "linkbtn", text: "Push to poll", onclick: function () { S.pollDraft = pollKey; if (v) v.redraw(); } })));
           if (S.pollDraft === pollKey) td.appendChild(pollDraftForm(pollQ(), ["Agree", "Change it", "Leave out"], v));
           return td;
@@ -1339,7 +1369,7 @@
           var d = el("div", { class: "row tight" });
           copies.forEach(function (cp) { d.appendChild(el("button", { type: "button", class: "linkbtn", text: cp[0], onclick: function () {
             // fill the box first, so the redraw does not save its old text back
-            var ta = box.querySelector('textarea[data-k="' + k + '"]'); if (ta) { ta.value = cp[1]; fitBox(ta); }
+            fillBox(box, k, cp[1]);
             save(k, cp[1]); if (v) v.redraw();
           } })); });
           d.appendChild(el("button", { type: "button", class: "linkbtn", text: "Push to poll", onclick: function () { S.pollDraft = pollKey; if (v) v.redraw(); } }));
@@ -1692,7 +1722,25 @@
   function isEncoder(sheet) { var m = lsGet(encKey()) || {}; return !!m[sheet]; }
   function setEncoder(sheet, on) {
     var m = lsGet(encKey()) || {}; if (on) m[sheet] = true; else delete m[sheet];
-    lsSet(encKey(), m); S.sig = ""; renderPart(true);
+    lsSet(encKey(), m); S.sig = "";
+    if (isStaff()) renderStaff(true); else renderPart(true);
+  }
+  // staff: each sheet is view only on a device until someone presses "I type on this device" (kept per device)
+  function staffSheet(act, sheet, name, cls) {
+    var id = sheetKey(act, sheet), enc = isEncoder(id), hOn = S.histOpen === id;
+    var wrap = el("div", { class: cls || "staffwrap" });
+    wrap.appendChild(el("div", { class: "encbar" + (enc ? " on" : "") },
+      el("span", { text: enc ? "This device types in " + name + "." : "View only on this device: " + name + " updates by itself." }),
+      el("button", { type: "button", class: "btn small" + (enc ? " ghost" : ""), text: enc ? "Switch to view only" : "I type on this device", onclick: function () {
+        if (!enc && !confirm("Only one device should type in " + name + ". Type in it on this device?")) return;
+        setEncoder(id, !enc);
+      } })));
+    wrap.appendChild(el("div", { class: "row tight", style: "margin:0 0 8px" },
+      el("button", { type: "button", class: "btn ghost small", text: hOn ? "Hide history" : "History of this sheet", onclick: function () { S.histOpen = hOn ? null : id; renderStaff(true); } }),
+      enc ? el("span", { class: "muted small", text: "Press Save after typing; ticks and lists save at once." }) : null));
+    if (hOn) wrap.appendChild(historyPanel(act, sheet, enc));
+    wrap.appendChild(sheetLive(act, sheet, enc));
+    return wrap;
   }
   function sheetPanel(key, def, mine) {
     var state = actState(key);
@@ -1947,6 +1995,11 @@
     });
     view.appendChild(lst);
   }
+  // the merge sheets keep a built statement or agreed list; rebuild it after a Restore
+  function rederive(act) {
+    if (act === "s2_merge") queueCell("s2_merge", "ROOM", "statement", mergeStatement(sheetBody("s2_merge", "ROOM")));
+    if (act === "s6_merge") [1, 2, 3].forEach(function (n) { var c = clinicRows(n); queueCell("s6_merge", "ROOM", "agreed." + c.sheet, agreedList(c, sheetBody("s6_merge", "ROOM"))); });
+  }
   // every change saved to one sheet, newest first (18_room_sheet_log.sql); staff can put back any earlier text
   function historyPanel(act, sheet, canRestore) {
     var box = el("div", { class: "histpanel" }, el("p", { class: "muted small", text: "Loading the history\u2026" }));
@@ -1954,19 +2007,21 @@
     rpc("room_sheet_history", { p_code: S.code, p_session: S.session || null, p_activity: act, p_sheet: sheet }).then(function (r) {
       clear(box);
       if (!r.ok) { box.appendChild(el("p", { class: "muted small", text: "The history is not available (" + (r.reason || "error") + ")." })); return; }
+      var derived = function (k) { return k === "statement" || /^agreed\./.test(k); };
+      r.rows = r.rows.filter(function (row) { return Object.keys(row.patch || {}).some(function (k) { return !derived(k); }); });
       box.appendChild(el("div", { class: "row tight" }, el("b", { text: "History: " + r.rows.length + " saved changes" }),
         el("button", { type: "button", class: "linkbtn", text: "Refresh", onclick: function () { box.replaceWith(historyPanel(act, sheet, canRestore)); } })));
       if (!r.rows.length) { box.appendChild(el("p", { class: "muted small", text: "No changes saved yet." })); return; }
       var list = el("ol", { class: "histlist" });
       r.rows.forEach(function (row) {
         var when = new Date(row.at), time = ("0" + when.getHours()).slice(-2) + ":" + ("0" + when.getMinutes()).slice(-2) + ":" + ("0" + when.getSeconds()).slice(-2);
-        Object.keys(row.patch || {}).forEach(function (k) {
+        Object.keys(row.patch || {}).filter(function (k) { return !derived(k); }).forEach(function (k) {
           var val = row.patch[k], isRows = /\._(add|del)$/.test(k);
           var li = el("li", null, el("span", { class: "muted", text: time + " \u00B7 " + (row.by || "") + " \u00B7 " }), el("b", { text: keyLabel(act, k) + ": " }),
             isRows ? (k.slice(-4) === "_add" ? "row added" : "row removed") : (show(val) ? el("span", { class: "histval", text: show(val) }) : el("i", { class: "muted", text: "(emptied)" })));
           if (!isRows && canRestore) li.appendChild(el("button", { type: "button", class: "linkbtn", text: "Restore", onclick: function () {
             if (!confirm("Put this back in the sheet?\n\n" + keyLabel(act, k) + ": " + show(val))) return;
-            queueCell(act, sheet, k, val); toast("Restored.");
+            queueCell(act, sheet, k, val); rederive(act); toast("Restored.");
             if (isStaff()) renderStaff(true); else { S.sig = ""; renderPart(true); }
           } }));
           list.appendChild(li);
@@ -1982,7 +2037,7 @@
     (s.shown || []).forEach(function (k) {
       var def = ACT[k];
       if (def.view !== "start") box.appendChild(el("p", { class: "muted small", text: def.intro || "" }));
-      if (def.view === "merge2" || def.view === "merge6" || def.view === "merge7" || def.view === "merge3") box.appendChild(sheetLive(k, "ROOM", true));
+      if (def.view === "merge2" || def.view === "merge6" || def.view === "merge7" || def.view === "merge3") box.appendChild(staffSheet(k, "ROOM", "this merge sheet"));
       else { box.appendChild(sheetLive(k, "ROOM", false)); if (def.view !== "start") box.appendChild(el("p", { class: "muted small", text: "Edit it on the Staff sheets tab." })); }
     });
     var sheets = sheetActsOf(s);
@@ -2008,10 +2063,9 @@
       box.appendChild(srow);
       if (S.openSheet && sheets.indexOf(S.openSheet.split("|")[0]) >= 0) {
         var os = S.openSheet.split("|");
-        var hOn = S.histOpen === S.openSheet;
-        box.appendChild(el("div", { class: "staffsheet" }, el("div", { class: "row tight" }, el("h4", { style: "margin:0", text: SHEET_NAMES[os[1]] + " \u00B7 staff can edit at any time" }),
-          el("button", { type: "button", class: "btn ghost small", text: hOn ? "Hide history" : "History of this sheet", onclick: function () { S.histOpen = hOn ? null : S.openSheet; renderStaff(true); } })),
-          hOn ? historyPanel(os[0], os[1], true) : null, sheetLive(os[0], os[1], true)));
+        var ss = staffSheet(os[0], os[1], SHEET_NAMES[os[1]] + "\u2019s sheet", "staffsheet");
+        ss.insertBefore(el("h4", { style: "margin:0 0 8px", text: SHEET_NAMES[os[1]] + " \u00B7 " + ACT[os[0]].title }), ss.firstChild);
+        box.appendChild(ss);
       }
     }
     slideActs(s).forEach(function (k) {
@@ -2048,8 +2102,8 @@
       card.appendChild(el("div", { class: "row" }, el("h3", { style: "margin:0", text: def.title }), el("button", { type: "button", class: "btn small" + (on ? "" : " ghost"), text: on ? "Close" : "Open", onclick: function () { S.openReg = on ? null : k; renderStaff(true); } })));
       if (on) {
         if (def.intro) card.appendChild(el("p", { class: "help", text: def.intro }));
-        if (def.importable) card.appendChild(importBox(k));
-        card.appendChild(sheetLive(k, "ROOM", true));
+        if (def.importable && isEncoder(sheetKey(k, "ROOM"))) card.appendChild(importBox(k));
+        card.appendChild(staffSheet(k, "ROOM", "this staff sheet"));
       }
       view.appendChild(card);
     });
@@ -2182,7 +2236,7 @@
   }
 
   // ----- download the data of this room (staff): an Excel file to read, and a full backup -----
-  var PAGE_VER = "20261126d";
+  var PAGE_VER = "20261126e";
   function exportCard() {
     var out = el("div"), card = el("div", { class: "ctl" }, el("h3", { text: "Download the data of this room (" + S.stage + ")" }),
       el("p", { class: "muted", style: "margin-top:0", text: "Everything saved in this room so far: every table, clinic and staff sheet, every personal answer (without who gave it; the database keeps no names) and the vote totals. The Excel file is for reading; the backup keeps the data exactly as stored." }));
